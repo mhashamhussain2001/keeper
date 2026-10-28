@@ -1,0 +1,9 @@
+torch
+transformers
+librosa
+soundfile
+numpy
+pandas
+scipy
+pytest
+python-dotenv

@@ -218,3 +218,12 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Keeper source recordings and generated artifacts
+.venv/
+data/
+outputs/
+*.wav
+*.m4a
+*.mp3
+*.flac
