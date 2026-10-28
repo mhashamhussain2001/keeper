@@ -227,3 +227,4 @@ outputs/
 *.m4a
 *.mp3
 *.flac
+private/
