@@ -7,3 +7,4 @@ pandas
 scipy
 pytest
 python-dotenv
+openai

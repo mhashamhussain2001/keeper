@@ -50,6 +50,19 @@ def _synthetic_inputs(tmp_path: Path) -> tuple[Path, Path, Path]:
     return audio_path, scores_path, labels_path
 
 
+class _ShortMemoScorer:
+    """Deterministic singing scores for a memo shorter than the classifier window."""
+
+    def score_windows(self, y: np.ndarray, sr: int, win_s: float, hop_s: float) -> pd.DataFrame:
+        """Return hop-spaced singing scores whose windows extend beyond the short memo."""
+        assert sr == 16000
+        assert y.dtype == np.float32 and y.shape == (24000,)
+        assert len(y) / sr < win_s
+        starts = np.arange(0.0, len(y) / sr, hop_s)
+        return pd.DataFrame({"start": starts, "end": starts + win_s,
+                             "singing": 0.95, "speech": 0.05, "instrument": 0.1})
+
+
 def test_pipeline_scores_csv_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
                                       capsys: pytest.CaptureFixture[str]) -> None:
     """Return None after checking all pipeline artifacts and expected sections without AST or network."""
@@ -95,6 +108,41 @@ def test_partial_frame_duration_and_speech_only_parser(tmp_path: Path, monkeypat
     songmap, regions, warnings = pipeline.run_pipeline(audio, MockLabelParser(labels), tmp_path / "result", scores_csv=scores)
     assert [(region.start, region.end) for region in regions] == [(0.0, 1.2)]
     assert songmap.sections == {} and warnings == []
+
+
+def test_pipeline_memo_shorter_than_window(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Return None after checking a 1.5-second memo produces finite regions inside its exact duration."""
+    monkeypatch.setattr(socket, "create_connection", _forbid_network)
+    monkeypatch.setattr(socket.socket, "connect", _forbid_network)
+    monkeypatch.setattr(socket.socket, "connect_ex", _forbid_network)
+    monkeypatch.setattr(pipeline, "ASTScorer", _forbid_ast)
+    cfg = KeeperConfig()
+    duration = 1.5
+    assert duration < cfg.win_s
+    times = np.arange(round(duration * cfg.sample_rate)) / cfg.sample_rate
+    y = (0.1 * np.sin(2 * np.pi * 220 * times)).astype(np.float32)
+    audio = tmp_path / "short.wav"
+    sf.write(audio, y, cfg.sample_rate, subtype="FLOAT")
+    labels = tmp_path / "labels.json"
+    labels.write_text("{}", encoding="utf-8")
+    destination = tmp_path / "result"
+
+    songmap, regions, warnings = pipeline.run_pipeline(
+        audio, MockLabelParser(labels), destination, cfg=cfg, scorer=_ShortMemoScorer(),
+    )
+
+    assert [(region.start, region.end, region.kind) for region in regions] == [(0.0, duration, "singing")]
+    assert all(0.0 <= region.start < region.end <= duration for region in regions)
+    assert all(left.end == right.start for left, right in zip(regions, regions[1:]))
+    for region in regions:
+        assert set(region.mean_scores) == {"singing", "speech", "instrument"}
+        assert all(np.isfinite(score) and 0.0 <= score <= 1.0 for score in region.mean_scores.values())
+        assert region.mean_scores == pytest.approx({"singing": 0.95, "speech": 0.05, "instrument": 0.1})
+    assert songmap.sections == {} and warnings == []
+    assert SongMap.from_json(destination / "songmap.json") == songmap
+    assert json.loads((destination / "regions.json").read_text(encoding="utf-8")) == [
+        region.to_dict() for region in regions
+    ]
 
 
 def test_cli_help_does_not_load_model(monkeypatch: pytest.MonkeyPatch,
