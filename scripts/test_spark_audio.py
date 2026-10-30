@@ -25,8 +25,7 @@ r = client.chat.completions.create(
         {"type": "text", "text": "Classify this clip as exactly one of: singing, speech, instrument, silence. Reply with the single word only."},
         {"type": "audio_url", "audio_url": {"url": url}},
     ]}],
-    reasonning_effort="low",
+    reasoning_effort="low",
 )
-print(repr(r.choices[0].message.content))
-print(r.choices[0].finish_reason)
-print(r.usage)
+
+print(f"start={start}s -> {r.choices[0].message.content!r} | finish={r.choices[0].finish_reason} | reasoning_tokens={r.usage.completion_tokens_details.reasoning_tokens}")
