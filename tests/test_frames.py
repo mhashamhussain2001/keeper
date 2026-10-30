@@ -24,31 +24,33 @@ def _scores(singing: list[float], speech: list[float]) -> pd.DataFrame:
 def test_silence_override() -> None:
     """Return None after checking silence wins over high voice probabilities."""
     cfg = replace(KeeperConfig(), mode_filter_frames=1)
-    assert frame_labels_from_scores(_scores([0.99], [0.98]), np.array([-60.0]), cfg) == ["silence"]
+    labels, gate = frame_labels_from_scores(_scores([0.99], [0.98]), np.array([-60.0]), cfg)
+    assert labels == ["silence"] and gate == -45.0
 
 
-def test_low_voice_is_instrument() -> None:
-    """Return None after checking low voice becomes instrument regardless of music score."""
+def test_low_speech_is_music() -> None:
+    """Return None after checking low speech becomes music regardless of singing score."""
     cfg = replace(KeeperConfig(), mode_filter_frames=1)
-    assert frame_labels_from_scores(_scores([0.1], [0.15]), np.array([-10.0]), cfg) == ["instrument"]
+    assert frame_labels_from_scores(_scores([0.1], [0.15]), np.array([-10.0]), cfg)[0] == ["music"]
 
 
-def test_voice_tie_is_singing() -> None:
-    """Return None after checking equal vocal probabilities choose singing."""
+def test_speech_threshold_is_inclusive() -> None:
+    """Return None after checking threshold-level speech wins even over higher singing scores."""
     cfg = replace(KeeperConfig(), mode_filter_frames=1)
-    assert frame_labels_from_scores(_scores([0.8], [0.8]), np.array([-10.0]), cfg) == ["singing"]
+    assert frame_labels_from_scores(_scores([0.8], [0.4]), np.array([-10.0]), cfg)[0] == ["speech"]
 
 
 def test_mode_filter_removes_blip() -> None:
     """Return None after checking the centered mode removes an isolated speech frame."""
     scores = _scores([0.9, 0.9, 0.1, 0.9, 0.9], [0.1, 0.1, 0.9, 0.1, 0.1])
-    assert frame_labels_from_scores(scores, np.full(5, -10.0), KeeperConfig()) == ["singing"] * 5
+    cfg = replace(KeeperConfig(), island_max_s=0.0)
+    assert frame_labels_from_scores(scores, np.full(5, -10.0), cfg)[0] == ["music"] * 5
 
 
 def test_mode_tie_keeps_original() -> None:
     """Return None after checking truncated edge neighborhoods preserve tied original labels."""
     scores = _scores([0.9, 0.1], [0.1, 0.9])
-    assert frame_labels_from_scores(scores, np.full(2, -10.0), KeeperConfig()) == ["singing", "speech"]
+    assert frame_labels_from_scores(scores, np.full(2, -10.0), KeeperConfig())[0] == ["music", "speech"]
 
 
 def test_overlap_uses_mean_and_half_open_intervals() -> None:

@@ -44,8 +44,8 @@ def _synthetic_inputs(tmp_path: Path) -> tuple[Path, Path, Path]:
     scores.to_csv(scores_path, index=False)
     labels_path = tmp_path / "commands.json"
     labels_path.write_text(json.dumps({
-        "9.5": CommandLabel(True, "chorus", "B", "keep that one", 1.0).to_dict(),
-        "24.5": CommandLabel(True, "verse", None, None, 1.0).to_dict(),
+        "9.0": CommandLabel(True, "chorus", "B", "keep that one", 1.0).to_dict(),
+        "24.0": CommandLabel(True, "verse", None, None, 1.0).to_dict(),
     }), encoding="utf-8")
     return audio_path, scores_path, labels_path
 
@@ -85,10 +85,12 @@ def test_pipeline_scores_csv_end_to_end(tmp_path: Path, monkeypatch: pytest.Monk
             assert sr == KeeperConfig().sample_rate and clip.ndim == 1
             assert sf.info(take.clip_path).subtype == "PCM_16"
             assert clip[0] == 0.0 and clip[-1] == 0.0
-    regions = json.loads((destination / "regions.json").read_text(encoding="utf-8"))
+    metadata = json.loads((destination / "regions.json").read_text(encoding="utf-8"))
+    assert metadata["silence_gate_db"] == -45.0
+    regions = metadata["regions"]
     assert regions[0]["start"] == 0.0 and regions[-1]["end"] == 30.0
     assert all(left["end"] == right["start"] for left, right in zip(regions, regions[1:]))
-    assert all(set(region["mean_scores"]) == {"singing", "speech", "instrument"} for region in regions)
+    assert all(set(region["mean_scores"]) == {"singing", "speech", "instrument", "music"} for region in regions)
     assert (destination / "window_scores.csv").exists()
     assert (destination / "warnings.txt").read_text(encoding="utf-8") == ""
     assert audio.read_bytes() == original_bytes
@@ -131,16 +133,16 @@ def test_pipeline_memo_shorter_than_window(tmp_path: Path, monkeypatch: pytest.M
         audio, MockLabelParser(labels), destination, cfg=cfg, scorer=_ShortMemoScorer(),
     )
 
-    assert [(region.start, region.end, region.kind) for region in regions] == [(0.0, duration, "singing")]
+    assert [(region.start, region.end, region.kind) for region in regions] == [(0.0, duration, "music")]
     assert all(0.0 <= region.start < region.end <= duration for region in regions)
     assert all(left.end == right.start for left, right in zip(regions, regions[1:]))
     for region in regions:
-        assert set(region.mean_scores) == {"singing", "speech", "instrument"}
+        assert set(region.mean_scores) == {"singing", "speech", "instrument", "music"}
         assert all(np.isfinite(score) and 0.0 <= score <= 1.0 for score in region.mean_scores.values())
-        assert region.mean_scores == pytest.approx({"singing": 0.95, "speech": 0.05, "instrument": 0.1})
+        assert region.mean_scores == pytest.approx({"singing": 0.95, "speech": 0.05, "instrument": 0.1, "music": 0.95})
     assert songmap.sections == {} and warnings == []
     assert SongMap.from_json(destination / "songmap.json") == songmap
-    assert json.loads((destination / "regions.json").read_text(encoding="utf-8")) == [
+    assert json.loads((destination / "regions.json").read_text(encoding="utf-8"))["regions"] == [
         region.to_dict() for region in regions
     ]
 
@@ -179,7 +181,7 @@ def test_mock_rounding_and_noncommand_default(tmp_path: Path) -> None:
     assert parser.parse(y, 16000, Region(2.1, 3.0, "speech", {})) == label
     assert not parser.parse(y, 16000, Region(5.0, 6.0, "speech", {})).is_command
     with pytest.raises(ValueError, match="Only speech"):
-        parser.parse(y, 16000, Region(2.0, 3.0, "singing", {}))
+        parser.parse(y, 16000, Region(2.0, 3.0, "music", {}))
 
 
 def test_muse_stub_never_calls_api(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 def read_audacity_labels(path: str | Path) -> list[tuple[float, float, str]]:
-    """Return start, end, and raw text for Audacity labels, preserving cmd: text."""
+    """Return Audacity intervals with legacy music labels mapped and cmd: text preserved."""
     labels: list[tuple[float, float, str]] = []
     for line_number, line in enumerate(Path(path).read_text(encoding="utf-8-sig").splitlines(), start=1):
         if not line.strip():
@@ -16,5 +16,6 @@ def read_audacity_labels(path: str | Path) -> list[tuple[float, float, str]]:
         start, end = float(fields[0]), float(fields[1])
         if not isfinite(start) or not isfinite(end) or not 0 <= start <= end:
             raise ValueError(f"Invalid Audacity interval at line {line_number}")
-        labels.append((start, end, fields[2]))
+        label = "music" if fields[2] in ("singing", "instrument") else fields[2]
+        labels.append((start, end, label))
     return labels

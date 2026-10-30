@@ -10,7 +10,7 @@ def cut_takes(
     source_file: str,
     cfg: KeeperConfig,
 ) -> tuple[list[tuple[Take, CommandLabel]], list[str]]:
-    """Return provisional takes paired with commands and warnings for commands without singing."""
+    """Return provisional takes paired with commands and warnings for commands without music."""
     takes: list[tuple[Take, CommandLabel]] = []
     warnings: list[str] = []
     previous_end = 0.0
@@ -18,27 +18,27 @@ def cut_takes(
         label = command_labels.get(command_region.start)
         if command_region.kind != "speech" or label is None or not label.is_command:
             continue
-        singing: list[Region] = []
+        music: list[Region] = []
         boundary = previous_end
         for region in reversed(regions[:index]):
             if region.end <= previous_end:
                 boundary = previous_end
                 break
             if region.kind == "speech" or (
-                region.kind in ("silence", "instrument") and region.end - region.start >= cfg.max_gap_s
+                region.kind == "silence" and region.end >= region.start + cfg.max_gap_s
             ):
                 boundary = max(previous_end, region.end)
                 break
-            if region.kind == "singing":
-                singing.append(region)
+            if region.kind == "music":
+                music.append(region)
             if region.start <= previous_end:
                 boundary = previous_end
                 break
-        if not singing:
-            warnings.append(f"command at {command_region.start}s had no preceding singing")
+        if not music:
+            warnings.append(f"command at {command_region.start}s had no preceding music")
             continue
-        start = float(max(boundary, singing[-1].start - cfg.pre_roll_s))
-        end = float(min(command_region.start, singing[0].end + cfg.post_roll_s))
+        start = float(max(boundary, music[-1].start - cfg.pre_roll_s))
+        end = float(min(command_region.start, music[0].end + cfg.post_roll_s))
         take = Take("", label.section or "unsorted", label.variant or "", start, end, source_file, label.note, None)
         takes.append((take, label))
         previous_end = end

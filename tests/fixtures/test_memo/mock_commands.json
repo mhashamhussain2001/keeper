@@ -1,0 +1,5 @@
+{
+  "8.0": {"is_command": true, "section": "chorus", "variant": "A", "note": null, "confidence": 1.0},
+  "21.0": {"is_command": true, "section": "chorus", "variant": "B", "note": null, "confidence": 1.0},
+  "27.0": {"is_command": true, "section": "chorus", "variant": "C", "note": null, "confidence": 1.0}
+}

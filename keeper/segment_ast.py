@@ -46,7 +46,7 @@ class ASTScorer:
         if any(not np.isfinite(value) or value * sr < 1 for value in (win_s, hop_s)):
             raise ValueError("Window and hop must each span at least one sample")
         raw_labels = list(dict.fromkeys(label for labels in SCORE_GROUPS.values() for label in labels))
-        columns = ["start", "end", *SCORE_GROUPS, *raw_labels]
+        columns = ["start", "end", *SCORE_GROUPS, "music", *raw_labels]
         rows: list[dict[str, float]] = []
         window_count = ceil(len(y) / (hop_s * sr))
         window_samples = round(win_s * sr)
@@ -64,5 +64,6 @@ class ASTScorer:
                 row = {"start": float(index * hop_s), "end": float(index * hop_s + win_s)}
                 row.update({label: float(probabilities_row[self.label_indices[label]]) for label in raw_labels})
                 row.update({group: max(row[label] for label in labels) for group, labels in SCORE_GROUPS.items()})
+                row["music"] = max(row["singing"], row["instrument"])
                 rows.append(row)
         return pd.DataFrame(rows, columns=columns)

@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import Literal
 
 
-FrameLabel = Literal["singing", "speech", "instrument", "silence"]
-Section = Literal["intro", "verse", "pre-chorus", "chorus", "bridge", "hook", "outro", "unsorted"]
+FrameLabel = Literal["music", "speech", "silence"]
+Section = Literal["intro", "verse", "pre-chorus", "chorus", "bridge", "hook", "outro", "unsorted", "unlabeled"]
 
 
 @dataclass

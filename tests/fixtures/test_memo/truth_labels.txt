@@ -1,0 +1,18 @@
+﻿0.00	4.71	singing
+4.71	5.78	silence
+5.78	7.50	singing
+7.50	8.25	silence
+8.25	9.21	speech
+8.25	9.21	cmd:chorus A
+9.21	10.82	silence
+10.82	15.53	singing
+15.53	17.57	silence
+17.57	20.14	singing
+20.14	21.42	silence
+21.42	22.28	speech
+21.42	22.28	cmd:chorus B
+22.28	23.35	silence
+23.35	26.35	singing
+26.35	27.00	silence
+27.00	28.28	speech
+27.00	28.28	cmd:chorus C
