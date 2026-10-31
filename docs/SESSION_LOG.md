@@ -101,3 +101,158 @@
   untracked `scripts/test_baseten.py` and `scripts/test_spark_audio.py` manual
   smoke scripts because importing them invokes an external API and local audio.
   Left all pre-existing working-tree changes untouched.
+
+## 2026-10-30 - Sparse truth and take boundary evaluation
+
+- Read `AGENTS.md`. Updated `eval/audacity_labels.py` documentation and
+  `eval/evaluate.py` so leading, internal, and trailing truth gaps count as
+  silence over the prediction's memo duration. Empty activity truth is all
+  silence. Predictions still require continuous coverage; overlapping activity
+  truth and truth activity beyond the memo duration remain errors.
+- Audacity import preserves `cmd:` command truth and `take:` boundary truth,
+  including point command annotations. Neither annotation type affects frame
+  labels or the duration used for frame scoring. Legacy singing/instrument
+  labels still map to music.
+- Added `take_boundary_error(pred_songmap, truth_takes)`, accepting a `SongMap`
+  and either `Take` records or raw Audacity rows (selecting only `take:` rows).
+  Each truth independently matches its greatest positive temporal overlap;
+  ties follow song-map order and a prediction may match multiple truth takes.
+  Results contain `per_take` rows with `truth_label`, `predicted_id`, and
+  absolute `start_error_s`/`end_error_s`, plus `misses` and `extras` counts.
+  Misses have null prediction IDs and errors; extras are unused predictions.
+  Touching endpoints do not match. Invalid take intervals raise `ValueError`.
+- Added regression coverage in `tests/test_audacity_labels.py` for sparse and
+  annotation-only truth, preserved annotation text, overlapping activity,
+  prediction gaps, maximum-overlap matching across sections, absolute boundary
+  errors, deterministic ties, shared predictions, empty inputs, misses, extras,
+  touching endpoints, and invalid take intervals. No dependencies added.
+- Validation: `.\.venv\Scripts\python.exe -m pytest tests/test_audacity_labels.py`
+  passed **21 tests**; `.\.venv\Scripts\python.exe -m pytest` passed **77 tests**
+  in 15.85 seconds on Python 3.11.9, with the three existing `audioread`
+  deprecation warnings. `git diff --check` passed.
+
+## 2026-10-30 - Local FastAPI UI skeleton
+
+- Executed `private/codex_prompt_ui_skeleton.md` after reading `AGENTS.md`.
+  Added `app/__init__.py`, `app/server.py`, `app/static/index.html`,
+  `scripts/make_demo_memo.py`, `tests/test_server.py`, and `tests/test_demo_memo.py`.
+  Updated `requirements.txt`, `README.md`, and this log. No changes to `keeper/`
+  or the preceding evaluation work; no Muse Spark, Baseten, or Modal integration.
+- Added and installed only the requested direct web dependencies: FastAPI for
+  API routing, Uvicorn for serving the app, and python-multipart for file uploads
+  (plus their normal transitive dependencies). Installed versions were FastAPI
+  0.162.0, Uvicorn 0.54.0, and python-multipart 0.0.32.
+- Implemented sorted memo listing, detail JSON with flattened regions and region-
+  derived duration, guarded WAV serving, synchronous multipart upload processing,
+  and static page serving. Settings hold repo-relative default paths. Existing
+  absolute exporter paths are normalized to relative clip paths and encoded URLs
+  in the API without modifying pipeline outputs. Resolved-path containment rejects
+  traversal, including Windows separators and absolute paths. Non-WAV requests and
+  missing memos/clips return 404.
+- Uploads use sanitized filename stems and UTC microsecond timestamps, save audio
+  under `data/uploads/`, and invoke the unchanged pipeline directly with an empty
+  per-memo mock parser. Success returns 201 and the memo ID. Unsupported extensions
+  return 400; pipeline failures return 500 JSON with a clear detail message.
+  Failed sources and partial artifacts remain inspectable, but incomplete song
+  maps are hidden from the picker. Existing output folders are never overwritten.
+- Built one plain HTML/CSS/JS page with system light/dark colors, memo picker,
+  upload progress/errors, an SVG activity timeline with selectable take brackets,
+  section columns/cards, and an ordered listening queue. Below 700 px the map uses
+  one column; the timeline can scroll horizontally. Keyboard selection is supported.
+  Web Audio decodes all clips before scheduling, starts each source at the previous
+  start plus decoded buffer duration, highlights the active card/bracket using the
+  audio clock, and stops scheduled or still-loading playback. Switching memos clears
+  playback and selection. Missing clip paths disable take playback and selection.
+- Seeded `outputs/fixture_demo/` using the numeric fixture: chorus A, B, and C,
+  duration 28.28 seconds, complete pipeline artifacts, and clearly named quiet
+  placeholder WAVs at exact take durations to sample precision. Placeholders are
+  mono 16 kHz PCM-16 tones with short fades, and the generator/UI clearly identify
+  them. `--audio data/test.wav` exports actual samples at the fixture boundaries
+  without rerunning classification; this branch was tested using synthetic audio.
+  Generated files and audio remain ignored by Git.
+- Documented all additional API, storage, upload, scheduling, selection, layout,
+  placeholder, and test-harness choices in the README's Local web UI section.
+  API tests use direct ASGI requests instead of adding an HTTP test dependency.
+  On Windows the async runtime's private wakeup sockets initialize before per-test
+  network blocking; no API test opens a network connection. Upload coverage replaces
+  only AST scoring and runs the actual pipeline and WAV exporter.
+- Validation: focused API/demo suite **15 passed**; full offline command
+  `.\.venv\Scripts\python.exe -m pytest` **92 passed** in 8.68 seconds, with the
+  three existing `audioread` deprecation warnings. A final API rerun after guarding
+  upload collision cleanup passed **13 tests**. Inline JavaScript passed
+  `node --check`; `git diff --check` passed. The initial focused run identified and
+  fixed Windows async-runtime setup under the socket guard and the required sample
+  rate argument in real-audio demo loading.
+- Ran `.\.venv\Scripts\python.exe scripts/make_demo_memo.py`, then started Uvicorn
+  on loopback port 8765 for a live HTTP check. Home page, memo list, fixture detail,
+  and all three placeholder WAVs returned 200. Stopped the owned server afterward.
+  No browser tests or manual listening were performed; browser layout and audible
+  gapless playback remain manual checks. Used the Sites skill's local-only workflow;
+  no hosted Site was created or published.
+- Run from the repo root:
+
+  ```powershell
+  .\.venv\Scripts\python.exe scripts/make_demo_memo.py
+  .\.venv\Scripts\python.exe -m uvicorn app.server:app --reload
+  ```
+
+  Open `http://127.0.0.1:8000`. Optional real audio:
+  `.\.venv\Scripts\python.exe scripts/make_demo_memo.py --audio data/test.wav`.
+
+## 2026-10-30 - Torchaudio AST comparison stopped at version check
+
+- Read `AGENTS.md` and the scoring, frame-label, and real-memo test code.
+  `pip show torch torchaudio transformers` reported torch **2.14.1**,
+  transformers **5.21.0**, and no installed torchaudio.
+- Completed the requested fallback baseline using the unchanged scorer:
+
+  ```powershell
+  .\.venv\Scripts\python.exe scripts/score_windows.py data/test.wav --out outputs/scores_fallback.csv
+  ```
+
+  Saved **58 windows** to `outputs/scores_fallback.csv`. Captured console output
+  in `outputs/score_fallback_run.log`; the run emitted the expected warning,
+  "At least one mel filter has all zero values." Baseline CSV SHA-256:
+  `B7E3133B3AF554599E31C36FD144BE2E02E0555E4BF900E169835E03BF202240`.
+- Before any installation, requested a non-mutating pip dependency plan:
+
+  ```powershell
+  .\.venv\Scripts\python.exe -m pip install --dry-run --report outputs/torchaudio_install_plan.json torchaudio==2.14.1
+  ```
+
+  Pip exited 1: `No matching distribution found for torchaudio==2.14.1`.
+  Available versions reported by the configured package index ended at **2.11.1**.
+  Dependency resolution failed before a JSON installation plan was generated.
+  The dry-run check overlapped the already-started baseline; only that existing
+  baseline was allowed to finish after the version check failed.
+- Followed the user's explicit step 3 STOP condition. Installed no packages and
+  did not try another torchaudio version or change torch. A subsequent `pip show`
+  confirmed torch remains **2.14.1** and torchaudio remains uninstalled.
+  No changes to `keeper/`, `requirements.txt`, or the fixture scores were made
+  for this task; earlier UI/evaluation working-tree changes remain untouched.
+- Singing/speech/instrument mean, median, and maximum absolute differences are
+  **not measured**, and changed frame-label count is **not measured** because
+  no torchaudio scoring run was possible under the exact-version constraint.
+  Neither step 6 branch was taken. No new fixture accuracy, recalls, or take
+  boundaries were computed, and the full test suite was not rerun because
+  the experiment stopped before any installation, code, or fixture changes.
+
+## 2026-10-30 - Pin direct dependencies for reproducibility
+
+- Read `AGENTS.md` and used `.\.venv\Scripts\python.exe -m pip freeze` to read
+  the exact installed versions. Pinned only the 13 existing direct dependencies
+  in `requirements.txt`: torch 2.14.1, transformers 5.21.0, librosa 0.11.0,
+  soundfile 0.14.0, numpy 2.4.6, pandas 3.1.0, scipy 1.17.1, pytest 9.2.0,
+  python-dotenv 1.2.4, openai 3.41.0, fastapi 0.162.0, uvicorn 0.54.0, and
+  python-multipart 0.0.32. Added no transitive dependencies or new packages,
+  and installed or upgraded nothing. Reading the freeze required execution
+  outside the sandbox because its base Python executable is inaccessible inside.
+- Added the requested one-line Known limitations section to `README.md`, stating
+  that AST uses the transformers numpy filterbank fallback because no torchaudio
+  release matches torch 2.14.1 and that repo results were measured on that path.
+  Updated the README installation command to use `-r requirements.txt` so it
+  honors the pins. No application logic, tests, or fixture data changed.
+- Validation: `.\.venv\Scripts\python.exe -m pytest` passed **92 tests** in
+  13.10 seconds on Python 3.11.9, with the three existing `audioread` deprecation
+  warnings (`aifc`, `audioop`, `sunau`). `git diff --check` passed. Preserved all
+  earlier working-tree changes.

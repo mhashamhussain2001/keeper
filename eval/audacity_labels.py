@@ -1,11 +1,15 @@
-"""Reading Audacity's tab-separated interval and point labels."""
+"""Read sparse Audacity activity truth alongside cmd: and take: annotations.
+
+Uncovered activity time is silence; annotations retain their prefixes so frame
+evaluation can ignore them and take evaluation can select take: intervals.
+"""
 
 from math import isfinite
 from pathlib import Path
 
 
 def read_audacity_labels(path: str | Path) -> list[tuple[float, float, str]]:
-    """Return Audacity intervals with legacy music labels mapped and cmd: text preserved."""
+    """Return intervals with music aliases mapped and cmd:/take: truth text preserved."""
     labels: list[tuple[float, float, str]] = []
     for line_number, line in enumerate(Path(path).read_text(encoding="utf-8-sig").splitlines(), start=1):
         if not line.strip():

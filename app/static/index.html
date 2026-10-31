@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f5f3ed" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#191c19" media="(prefers-color-scheme: dark)">
+  <title>Keeper · Your song map</title>
+  <style>
+    :root { color-scheme: light dark; --bg:#f5f3ed; --panel:#fffefa; --ink:#263329; --muted:#697267;
+      --line:#dcded3; --accent:#315c42; --soft:#e6eddf; --music:#91ad84; --speech:#d7af77; --silence:#dde0d5;
+      --danger:#ac3d32; font:15px/1.5 system-ui,sans-serif; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--ink); }
+    button,select { font:inherit; color:inherit; border:1px solid var(--line); border-radius:7px; background:var(--panel); }
+    button { padding:10px 15px; cursor:pointer; min-height:44px; touch-action:manipulation; }
+    button:disabled { opacity:.45; cursor:default; }
+    button:not(:disabled):hover { border-color:var(--accent); }
+    button.primary { background:var(--accent); color:var(--panel); border-color:var(--accent); }
+    :focus-visible { outline:3px solid var(--speech); outline-offset:4px; }
+    header { border-bottom:1px solid var(--line); }
+    .header-inner,main,.player-inner { max-width:1360px; margin:auto; padding:24px 40px; }
+    .header-inner { display:flex; align-items:center; gap:28px; }
+    .brand { display:flex; align-items:center; gap:10px; font-size:23px; letter-spacing:-1px; font-weight:650; margin:0; }
+    .mark { width:23px; height:26px; border-left:6px solid var(--accent); border-right:6px solid var(--accent); transform:skewY(-12deg); }
+    .tagline { color:var(--muted); margin:0; font-size:13px; }
+    .memo-controls { margin-left:auto; display:flex; align-items:center; gap:10px; }
+    select { min-height:44px; max-width:300px; padding:8px 30px 8px 12px; }
+    main { padding-top:34px; padding-bottom:160px; }
+    .eyebrow { color:var(--muted); text-transform:uppercase; letter-spacing:.12em; font-size:11px; font-weight:650; margin:0 0 7px; }
+    h1 { font:normal 36px/1.2 Georgia,serif; margin:0; letter-spacing:-1px; overflow-wrap:anywhere; }
+    .heading-row { display:flex; justify-content:space-between; align-items:end; gap:20px; }
+    .summary { color:var(--muted); margin:0; font-variant-numeric:tabular-nums; }
+    #status { min-height:24px; margin:15px 0; color:var(--muted); }
+    #status.error { color:var(--danger); }
+    .timeline-panel { padding:24px; background:var(--panel); border:1px solid var(--line); border-radius:12px; }
+    .panel-heading { display:flex; justify-content:space-between; gap:20px; align-items:center; }
+    h2 { font-size:15px; margin:0; font-weight:600; }
+    .legend { display:flex; gap:18px; font-size:12px; color:var(--muted); flex-wrap:wrap; }
+    .legend span { display:flex; align-items:center; gap:6px; }
+    .dot { width:8px; height:8px; border-radius:2px; display:inline-block; }
+    .music { background:var(--music); } .speech { background:var(--speech); } .silence { background:var(--silence); }
+    .timeline-scroll { overflow-x:auto; margin-top:12px; }
+    #timeline { width:100%; min-width:640px; display:block; }
+    .timeline-take { cursor:pointer; color:var(--muted); }
+    .timeline-take path { stroke:currentColor; stroke-width:1.5; fill:none; }
+    .timeline-take text { fill:currentColor; font:12px system-ui,sans-serif; }
+    .timeline-take.selected { color:var(--accent); }
+    .timeline-take.selected path { stroke-width:3; }
+    .timeline-take.playing { color:var(--accent); }
+    .timeline-take.playing text { font-weight:750; text-decoration:underline; }
+    .timeline-take.playing path { stroke-width:4; }
+    .map-heading { margin:32px 0 18px; }
+    .hint { font-size:13px; color:var(--muted); margin:5px 0 0; }
+    .song-map { display:grid; grid-template-columns:repeat(auto-fill,minmax(225px,1fr)); gap:18px; align-items:start; }
+    .section-title { display:flex; justify-content:space-between; text-transform:capitalize; margin:0 0 12px; font-size:14px; }
+    .section-count { color:var(--muted); font-weight:400; }
+    .take-card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:18px; margin-bottom:12px; }
+    .take-card.selected { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); }
+    .take-card.playing { background:var(--soft); box-shadow:inset 4px 0 var(--accent); }
+    .take-label { display:flex; align-items:center; gap:10px; cursor:pointer; font-weight:600; overflow-wrap:anywhere; }
+    input[type=checkbox] { accent-color:var(--accent); width:18px; height:18px; margin:0; flex-shrink:0; }
+    .order { margin-left:auto; font-size:11px; border-radius:4px; min-width:22px; text-align:center; background:var(--soft); color:var(--accent); }
+    .take-times { color:var(--muted); font-size:13px; margin:15px 0 5px; font-variant-numeric:tabular-nums; }
+    .take-footer { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+    .take-duration { font-size:12px; color:var(--muted); }
+    .play-take { padding:5px 12px; min-height:36px; font-size:13px; }
+    .empty { padding:24px 0; color:var(--muted); }
+    .player { position:fixed; bottom:0; left:0; right:0; background:var(--panel); border-top:1px solid var(--line); }
+    .player-inner { display:flex; align-items:center; gap:12px; padding-top:18px; padding-bottom:max(18px,env(safe-area-inset-bottom)); }
+    .queue { flex:1; min-width:0; }
+    .queue-title { font-size:13px; font-weight:600; margin:0; }
+    #queue-description { color:var(--muted); font-size:12px; margin:2px 0 0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    #playing-status { font-size:12px; color:var(--accent); min-height:18px; }
+    @media (prefers-color-scheme:dark) {
+      :root { --bg:#191c19; --panel:#222722; --ink:#e5e9df; --muted:#a0aa9a; --line:#3c443a;
+        --accent:#b4d09c; --soft:#303f2e; --music:#759565; --speech:#b78d57; --silence:#3c443a; --danger:#ffa99b; }
+    }
+    @media (max-width:699px) {
+      .header-inner,main,.player-inner { padding-left:20px; padding-right:20px; }
+      .header-inner { flex-wrap:wrap; gap:14px; padding-top:18px; padding-bottom:18px; }
+      .tagline { margin-left:auto; } .memo-controls { margin:0; width:100%; }
+      select { flex:1; min-width:0; max-width:none; font-size:16px; }
+      main { padding-bottom:205px; } h1 { font-size:29px; }
+      .heading-row { align-items:start; flex-direction:column; gap:8px; }
+      .timeline-panel { padding:16px; } .panel-heading { flex-wrap:wrap; gap:12px; }
+      .song-map { grid-template-columns:1fr; }
+      .player-inner { flex-wrap:wrap; gap:10px; } .queue { flex-basis:100%; }
+      #play-selected { flex:1; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <p class="brand"><span class="mark" aria-hidden="true"></span>Keeper</p>
+      <p class="tagline">Room for the next idea.</p>
+      <div class="memo-controls">
+        <select id="memo-picker" aria-label="Choose a memo"><option value="">Loading memos…</option></select>
+        <button id="upload-button">↑ Upload memo</button>
+        <input id="upload-file" type="file" accept="audio/*,.m4a,.aif,.aiff" hidden>
+      </div>
+    </div>
+  </header>
+  <main>
+    <div class="heading-row">
+      <div><p class="eyebrow">Your working session</p><h1 id="memo-title">A place for your takes.</h1></div>
+      <p id="memo-summary" class="summary"></p>
+    </div>
+    <p id="status" role="status" aria-live="polite">Loading your memos…</p>
+    <section class="timeline-panel" aria-labelledby="timeline-heading">
+      <div class="panel-heading">
+        <h2 id="timeline-heading">The whole memo</h2>
+        <div class="legend" aria-label="Activity colors">
+          <span><i class="dot music"></i>Music</span><span><i class="dot speech"></i>Speech</span><span><i class="dot silence"></i>Silence</span>
+        </div>
+      </div>
+      <div class="timeline-scroll"><svg id="timeline" viewBox="0 0 1000 150" role="group" aria-label="Memo timeline"></svg></div>
+    </section>
+    <div class="map-heading"><h2>Your song map</h2><p class="hint">Select takes in the order you want to hear them.</p></div>
+    <div id="song-map" class="song-map"><p class="empty">Choose a memo or upload a recording to get started.</p></div>
+  </main>
+  <footer class="player" aria-label="Take player">
+    <div class="player-inner">
+      <div class="queue">
+        <p id="queue-title" class="queue-title">Listen to your ideas together</p>
+        <p id="queue-description">Select at least two takes for back-to-back playback.</p>
+        <div id="playing-status" role="status" aria-live="polite"></div>
+      </div>
+      <button id="play-selected" class="primary" disabled>▶ Play selected back to back</button>
+      <button id="stop" disabled>■ Stop</button>
+    </div>
+  </footer>
+  <script>
+    "use strict";
+    const $ = id => document.getElementById(id);
+    const sectionOrder = ["intro", "verse", "pre-chorus", "chorus", "bridge", "hook", "outro", "unsorted", "unlabeled"];
+    const state = { takes:[], selected:[], buffers:new Map(), sources:[], context:null,
+      epoch:0, memoEpoch:0, frame:null, busy:false, playing:null, uploading:false };
+    const seconds = value => `${Number(value).toFixed(2)}s`;
+    const takeName = take => `${take.section} · ${take.variant}`;
+
+    function status(message, error = false) {
+      $("status").textContent = message;
+      $("status").classList.toggle("error", error);
+    }
+
+    async function request(url, options) {
+      const response = await fetch(url, options);
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(typeof payload?.detail === "string" ? payload.detail : `Request failed (${response.status}).`);
+      }
+      return response.json();
+    }
+
+    function element(tag, className, text) {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text !== undefined) node.textContent = text;
+      return node;
+    }
+
+    function svgElement(tag, attributes, text) {
+      const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
+      for (const [key, value] of Object.entries(attributes)) node.setAttribute(key, value);
+      if (text !== undefined) node.textContent = text;
+      return node;
+    }
+
+    function updateSelection() {
+      document.querySelectorAll("[data-take]").forEach(node => {
+        const index = state.selected.indexOf(node.dataset.take);
+        node.classList.toggle("selected", index >= 0);
+        const checkbox = node.querySelector("input");
+        if (checkbox) checkbox.checked = index >= 0;
+        const badge = node.querySelector(".order");
+        if (badge) badge.textContent = index >= 0 ? String(index + 1).padStart(2, "0") : "";
+        if (node.classList.contains("timeline-take")) node.setAttribute("aria-pressed", String(index >= 0));
+      });
+      const selected = state.selected.map(id => state.takes.find(take => take.id === id));
+      $("queue-title").textContent = selected.length ? `${selected.length} take${selected.length === 1 ? "" : "s"} selected` : "Listen to your ideas together";
+      $("queue-description").textContent = selected.length ? selected.map(takeName).join(" → ") : "Select at least two takes for back-to-back playback.";
+      $("play-selected").disabled = selected.length < 2 || state.busy || state.uploading;
+    }
+
+    function toggleSelection(take) {
+      if (!take.clip_url) { status("This take has no exported clip. Choose the fixture demo or upload a recording."); return; }
+      const index = state.selected.indexOf(take.id);
+      if (index >= 0) state.selected.splice(index, 1);
+      else state.selected.push(take.id);
+      updateSelection();
+    }
+
+    function highlight(id) {
+      if (state.playing === id) return;
+      state.playing = id;
+      document.querySelectorAll("[data-take]").forEach(node => node.classList.toggle("playing", node.dataset.take === id));
+      const take = state.takes.find(item => item.id === id);
+      $("playing-status").textContent = take ? `Playing ${takeName(take)}` : "";
+    }
+
+    function stopPlayback() {
+      state.epoch++;
+      for (const source of state.sources) {
+        try { source.stop(); } catch (_) { /* A source may already have finished. */ }
+        source.disconnect();
+      }
+      state.sources = [];
+      cancelAnimationFrame(state.frame);
+      state.busy = false;
+      highlight(null);
+      $("playing-status").textContent = "";
+      $("stop").disabled = true;
+      updateSelection();
+    }
+
+    async function decodeClip(take) {
+      if (!state.buffers.has(take.clip_url)) {
+        const promise = fetch(take.clip_url).then(response => {
+          if (!response.ok) throw new Error(`Cannot load ${takeName(take)} (${response.status}).`);
+          return response.arrayBuffer();
+        }).then(bytes => state.context.decodeAudioData(bytes));
+        state.buffers.set(take.clip_url, promise);
+        promise.catch(() => state.buffers.delete(take.clip_url));
+      }
+      return state.buffers.get(take.clip_url);
+    }
+
+    async function playTakes(takes) {
+      stopPlayback();
+      const epoch = state.epoch;
+      state.busy = true;
+      $("stop").disabled = false;
+      $("playing-status").textContent = "Preparing clips…";
+      updateSelection();
+      try {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextClass) throw new Error("This browser does not support Web Audio playback.");
+        if (!state.context) state.context = new AudioContextClass();
+        await state.context.resume();
+        const buffers = await Promise.all(takes.map(decodeClip));
+        if (epoch !== state.epoch) return;
+        let when = state.context.currentTime + 0.08;
+        const schedule = [];
+        for (let index = 0; index < buffers.length; index++) {
+          const source = state.context.createBufferSource();
+          source.buffer = buffers[index];
+          source.connect(state.context.destination);
+          state.sources.push(source);
+          source.start(when);
+          schedule.push({ id:takes[index].id, start:when, end:when + buffers[index].duration });
+          when += buffers[index].duration;
+        }
+        function tick() {
+          if (epoch !== state.epoch) return;
+          const now = state.context.currentTime;
+          if (now >= when) { stopPlayback(); $("playing-status").textContent = "Playback finished."; return; }
+          highlight(schedule.find(item => item.start <= now && now < item.end)?.id || null);
+          state.frame = requestAnimationFrame(tick);
+        }
+        tick();
+      } catch (error) {
+        if (epoch !== state.epoch) return;
+        stopPlayback();
+        status(error.message, true);
+      }
+    }
+
+    function renderTimeline(data) {
+      const svg = $("timeline");
+      svg.replaceChildren();
+      const duration = data.duration_s;
+      if (!duration) return;
+      const x = time => 15 + (time / duration) * 970;
+      const lanes = [];
+      const brackets = [];
+      for (const take of [...state.takes].sort((a, b) => a.start - b.start)) {
+        const left = x(take.start);
+        const occupiedEnd = Math.max(x(take.end), left + takeName(take).length * 7);
+        let lane = lanes.findIndex(end => end + 12 < left);
+        if (lane < 0) lane = lanes.length;
+        lanes[lane] = occupiedEnd;
+        brackets.push({ take, lane });
+      }
+      const barY = 24 + Math.max(lanes.length, 1) * 32;
+      svg.setAttribute("viewBox", `0 0 1000 ${barY + 70}`);
+      for (const { take, lane } of brackets) {
+        const y = 25 + lane * 32;
+        const group = svgElement("g", { class:"timeline-take", "data-take":take.id, role:"button", tabindex:0,
+          "aria-label":`Select ${takeName(take)}, ${seconds(take.start)} to ${seconds(take.end)}`, "aria-pressed":"false" });
+        group.append(svgElement("rect", { x:x(take.start), y:y - 18, width:Math.max(x(take.end) - x(take.start), 24), height:32, fill:"transparent" }));
+        group.append(svgElement("path", { d:`M ${x(take.start)} ${y + 10} v -7 H ${x(take.end)} v 7` }));
+        group.append(svgElement("text", { x:x(take.start) + 2, y:y - 5 }, takeName(take)));
+        group.addEventListener("click", () => toggleSelection(take));
+        group.addEventListener("keydown", event => {
+          if (event.key === "Enter" || event.key === " ") { event.preventDefault(); toggleSelection(take); }
+        });
+        svg.append(group);
+      }
+      const colors = { music:"var(--music)", speech:"var(--speech)", silence:"var(--silence)" };
+      svg.append(svgElement("rect", { x:15, y:barY, width:970, height:24, rx:3, fill:colors.silence }));
+      for (const region of data.regions) {
+        const rect = svgElement("rect", { x:x(region.start), y:barY, width:Math.max(0, x(region.end) - x(region.start)), height:24, fill:colors[region.kind] || colors.silence });
+        rect.append(svgElement("title", {}, `${region.kind}: ${seconds(region.start)}–${seconds(region.end)}`));
+        svg.append(rect);
+      }
+      const step = Math.max(1, Math.ceil(duration / 8 / 5) * 5);
+      for (let time = 0; time < duration; time += step) {
+        if (duration - time < step * 0.35 && time > 0) continue;
+        svg.append(svgElement("line", { x1:x(time), x2:x(time), y1:barY + 28, y2:barY + 33, stroke:"var(--line)" }));
+        svg.append(svgElement("text", { x:x(time), y:barY + 50, fill:"var(--muted)", "font-size":11 }, `${time}s`));
+      }
+      svg.append(svgElement("text", { x:985, y:barY + 50, fill:"var(--muted)", "font-size":11, "text-anchor":"end" }, seconds(duration)));
+    }
+
+    function renderSongMap(data) {
+      const map = $("song-map");
+      map.replaceChildren();
+      const sections = data.songmap.sections;
+      const names = [...sectionOrder, ...Object.keys(sections).filter(name => !sectionOrder.includes(name))];
+      for (const name of names) {
+        if (!sections[name]?.length) continue;
+        const column = element("section", "section-column");
+        const heading = element("h3", "section-title", name);
+        heading.append(element("span", "section-count", String(sections[name].length).padStart(2, "0")));
+        column.append(heading);
+        for (const take of state.takes.filter(item => item.section === name)) {
+          const card = element("article", "take-card");
+          card.dataset.take = take.id;
+          const label = element("label", "take-label");
+          const checkbox = element("input");
+          checkbox.type = "checkbox";
+          checkbox.disabled = !take.clip_url;
+          checkbox.setAttribute("aria-label", `Select ${takeName(take)}`);
+          checkbox.addEventListener("change", () => toggleSelection(take));
+          label.append(checkbox, element("span", "", take.variant), element("span", "order"));
+          const footer = element("div", "take-footer");
+          const play = element("button", "play-take", "▶ Play");
+          play.setAttribute("aria-label", `Play ${takeName(take)}`);
+          play.disabled = !take.clip_url;
+          play.addEventListener("click", () => playTakes([take]));
+          footer.append(element("span", "take-duration", take.clip_url ? `${seconds(take.end - take.start)} duration` : "No clip exported"), play);
+          card.append(label, element("p", "take-times", `${seconds(take.start)} — ${seconds(take.end)}`), footer);
+          column.append(card);
+        }
+        map.append(column);
+      }
+      if (!state.takes.length) map.append(element("p", "empty", "No takes found in this memo. Try another recording."));
+    }
+
+    async function loadMemo(id) {
+      const memoEpoch = ++state.memoEpoch;
+      stopPlayback();
+      state.selected = [];
+      state.takes = [];
+      state.buffers.clear();
+      $("song-map").replaceChildren(element("p", "empty", "Loading song map…"));
+      $("timeline").replaceChildren();
+      $("memo-title").textContent = id;
+      $("memo-summary").textContent = "";
+      updateSelection();
+      status("Loading memo…");
+      try {
+        const data = await request(`/api/memos/${encodeURIComponent(id)}`);
+        if (memoEpoch !== state.memoEpoch) return;
+        state.takes = Object.entries(data.songmap.sections).flatMap(([section, takes]) => takes.map(take => ({ ...take, section })));
+        $("memo-summary").textContent = `${seconds(data.duration_s)} · ${state.takes.length} takes`;
+        renderTimeline(data);
+        renderSongMap(data);
+        updateSelection();
+        const placeholders = state.takes.some(take => take.clip_path?.split("/").pop().startsWith("placeholder_"));
+        status(placeholders ? "Demo audio: these clips are placeholder tones, not the original recording." : "Click a bracket or check a card to add a take to your listening order.");
+      } catch (error) {
+        if (memoEpoch !== state.memoEpoch) return;
+        $("song-map").replaceChildren(element("p", "empty", "This memo could not be loaded. Choose another memo."));
+        status(error.message, true);
+      }
+    }
+
+    async function refreshMemos(preferred) {
+      const ids = await request("/api/memos");
+      const picker = $("memo-picker");
+      picker.replaceChildren();
+      if (!ids.length) {
+        picker.append(new Option("No memos yet", ""));
+        status("Upload a recording to start your first song map.");
+        return;
+      }
+      for (const id of ids) picker.append(new Option(id, id));
+      const id = ids.includes(preferred) ? preferred : ids.includes("fixture_demo") ? "fixture_demo" : ids[0];
+      picker.value = id;
+      await loadMemo(id);
+    }
+
+    $("memo-picker").addEventListener("change", event => { if (event.target.value) loadMemo(event.target.value); });
+    $("upload-button").addEventListener("click", () => $("upload-file").click());
+    $("stop").addEventListener("click", stopPlayback);
+    $("play-selected").addEventListener("click", () => playTakes(state.selected.map(id => state.takes.find(take => take.id === id))));
+    $("upload-file").addEventListener("change", async event => {
+      const file = event.target.files[0];
+      if (!file) return;
+      stopPlayback();
+      state.uploading = true;
+      $("upload-button").disabled = true;
+      $("memo-picker").disabled = true;
+      $("upload-button").textContent = "Processing…";
+      updateSelection();
+      status("Processing your recording. Keep this page open; longer memos can take a while.");
+      try {
+        const form = new FormData();
+        form.append("file", file);
+        const result = await request("/api/memos", { method:"POST", body:form });
+        await refreshMemos(result.memo_id);
+      } catch (error) { status(error.message, true); }
+      finally {
+        state.uploading = false;
+        $("upload-button").disabled = false;
+        $("memo-picker").disabled = false;
+        $("upload-button").textContent = "↑ Upload memo";
+        event.target.value = "";
+        updateSelection();
+      }
+    });
+    window.addEventListener("pagehide", stopPlayback);
+    refreshMemos().catch(error => status(error.message, true));
+  </script>
+</body>
+</html>
