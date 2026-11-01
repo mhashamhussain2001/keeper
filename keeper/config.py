@@ -41,6 +41,10 @@ class KeeperConfig:
     gate_clamp_db: tuple[float, float] = (-60.0, -30.0)
     island_max_s: float = 8.0
     island_vote_min: float = 0.6
+    protect_speech_runs: bool = False
+    protect_speech_run_s: float = 1.0
+    edge_trim: bool = True
+    trim_singing_min: float = 0.0018
     min_unlabeled_s: float = 3.0
     mode_filter_frames: int = 3
     min_region_s: dict[str, float] = field(default_factory=_default_min_region_s)
@@ -55,6 +59,10 @@ class KeeperConfig:
             raise ValueError("Keeper audio must use 16000 Hz")
         if any(not isfinite(value) or value <= 0 for value in (self.win_s, self.hop_s)):
             raise ValueError("win_s and hop_s must be positive and finite")
+        if not isfinite(self.protect_speech_run_s) or self.protect_speech_run_s <= 0:
+            raise ValueError("protect_speech_run_s must be positive and finite")
+        if not isfinite(self.trim_singing_min) or not 0 <= self.trim_singing_min <= 1:
+            raise ValueError("trim_singing_min must be between zero and one")
         if self.hop_s * self.sample_rate < 1:
             raise ValueError("hop_s must span at least one sample")
         if self.mode_filter_frames < 1 or self.mode_filter_frames % 2 != 1:

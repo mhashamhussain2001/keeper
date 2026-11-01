@@ -74,7 +74,7 @@ def silence_gate_db(rms_db: np.ndarray, cfg: KeeperConfig) -> float:
 
 
 def island_vote(labels: list[FrameLabel], cfg: KeeperConfig) -> list[FrameLabel]:
-    """Return labels with short non-silence islands assigned their qualifying majority class."""
+    """Return majority-voted sound islands while optionally preserving sustained raw speech runs."""
     voted = labels.copy()
     start = 0
     while start < len(labels):
@@ -89,6 +89,18 @@ def island_vote(labels: list[FrameLabel], cfg: KeeperConfig) -> list[FrameLabel]
             if count / (end - start) >= cfg.island_vote_min:
                 voted[start:end] = [winner] * (end - start)
         start = end
+    if cfg.protect_speech_runs:
+        start = 0
+        while start < len(labels):
+            if labels[start] != "speech":
+                start += 1
+                continue
+            end = start + 1
+            while end < len(labels) and labels[end] == "speech":
+                end += 1
+            if (end - start) * cfg.hop_s >= cfg.protect_speech_run_s:
+                voted[start:end] = labels[start:end]
+            start = end
     return voted
 
 

@@ -328,3 +328,132 @@
   dependencies, changed no pipeline logic or thresholds, and performed no
   tuning based on these results. The complete generated report is pasted
   in the task reply and retained in `outputs/memo2_eval/report.md`.
+
+## 2026-10-31 - Memo2 diagnostics (report only)
+
+- Read `AGENTS.md` and `private/codex_prompt_memo2_diagnostics.md`. Added
+  `scripts/diagnose_memo.py` and `tests/test_diagnose_memo.py`; generated
+  `outputs/memo2_eval/diagnostics.md` and `diagnostics_frames.csv`. Full-memo
+  scores, truth, clips, song map, pipeline files, and thresholds are unchanged.
+  No dependencies added; ROC calculations use the already-listed SciPy package.
+  Verified the full-memo score SHA-256 remains
+  `EFFC91F24B4A8BF53265F8720FF53200A883F868E7A27D9BADBA4AD68B546D77`.
+- Reconstructed raw gating, island voting, mode filtering, and absorb_short;
+  checked the trace against `keeper.frames.frame_labels_from_scores` and the
+  existing final regions. Both missed commands were erased by island voting:
+  the reject command's 6 s island (92-98 s) had music in 11/12 raw frames;
+  the chorus command's 8 s island (114.5-122.5 s) had music in 11/16 frames.
+  The speech scores exceeded 0.40; the inclusive <=8 s voting rule applied.
+- Singing/instrument midpoint truth counts: 396/107. Higher-means-singing ROC
+  AUC: singing group 0.986501; Singing 0.985840; Humming 0.968871; instrument
+  group 0.655079; Music 0.665652; singing-minus-instrument 0.446686. The best
+  score was singing group, with diagnostic threshold >=0.0018018119735643268
+  maximizing in-sample balanced accuracy 0.944810 (singing recall 0.992424,
+  instrument recall 0.897196). This threshold was not applied to the pipeline.
+- Simulated edge-only trimming, preserving internal frames and bounded 0.3 s
+  pre-roll / 0.5 s post-roll. Current -> simulated absolute start/end errors:
+  verse 20.250/1.260 -> 1.250/0.760 s; rejected 0.620/1.190 unchanged;
+  early chorus 11.170/2.890 -> 11.170/1.890 s; bridge 4.140/0.900 ->
+  0.360/0.900 s; final chorus 38.670/0.770 unchanged. Retained 9/10 simulated
+  takes (dropped bridge-take-1); truth misses stayed zero. No clips were edited.
+- Memo1 fixture has 32 singing frames and no instrument truth, so its AUC is
+  undefined. Singing-group median 0.103803; 0/32 singing frames (0%) would be
+  instrument-classified by the memo2 rule. This preserves observed fixture
+  singing but does not establish general safety or instrument specificity.
+- Located all 49 truth-silence/predicted-music frames: 40 were already above
+  the RMS gate (-40.764085 dB); 9 raw-silence frames were filled by the mode
+  filter; 0 were absorbed by absorb_short. Listed every contiguous run in the
+  report. RMS covers whole frames while truth uses midpoints, so boundary
+  frames may contain music even when scored as silence; no claim that RMS
+  alone identifies room noise versus piano sustain.
+- Benchmarked only the first 60 seconds (120 windows), loading the local AST
+  model once; kept prefix benchmark CSVs and a resumable checkpoint separate
+  from the full memo cache. Runtime: torch 2.14.1+cpu, initial threads 4,
+  os.cpu_count() 8; 11th Gen Intel Core i7-1165G7 @ 2.80GHz. Model load
+  23.909 s excluded from scoring timings. Single sequential trials:
+  - batch 8 / threads 4: 266.701 s, 2.222507 s/window, max score diff 0;
+  - batch 16 / threads 4: 302.396 s, 2.519968 s/window, diff 1.93715096e-7;
+  - batch 32 / threads 4: 311.621 s, 2.596841 s/window, diff 1.93715096e-7;
+  - batch 8 / threads 8: 338.851 s, 2.823760 s/window, diff 0.
+  All differences were <1e-5 across all exposed raw/group scores. Current
+  batch 8 / four threads was fastest: 4.445 processing minutes per audio
+  minute, with no speedup from the tested changes. Temporary runtime overrides
+  were restored; no defaults changed. Some diagnostics/tests overlapped timings,
+  so small differences are noisy. Prefix timing does not fully explain the old
+  47-minute full run; additional profiling would be required for attribution.
+- Report ends with proposed fixes, conditional metric effects, and memo1 risks;
+  implemented none of those fixes. Ran the final CLI using completed benchmark
+  checkpoints (no repeat inference), and retained the full report for the reply.
+- Validation: diagnostic suite **11 passed**; final full command
+  `.\.venv\Scripts\python.exe -m pytest` **132 passed** in 10.37 s, with the
+  three existing audioread deprecation warnings. `git diff --check` passed;
+  `git diff -- keeper/` is empty. Full report command:
+  `.\.venv\Scripts\python.exe scripts/diagnose_memo.py memo2`.
+
+## 2026-10-31 - Protected speech and edge trim with cached ablation
+
+- Read `AGENTS.md`. Added configurable raw-speech-run protection to island
+  voting: runs >=`protect_speech_run_s=1.0` retain speech when enabled through
+  `protect_speech_runs`. Other minority frames retain the existing voting
+  behavior. Added tests for the 2.5 s run in an 8 s island, isolated 0.5 s
+  speech, inclusive 1 s protection, and separated short runs.
+- Added `keeper/trim.py`, applied after commanded and unlabeled candidates
+  are collected and before naming/export. With `edge_trim=True`, the first
+  and last overlapping frame reaching `trim_singing_min=0.0018` define the
+  core; reapply existing pre/post roll within the original take. Keep internal
+  frames and metadata unchanged. Drop takes without threshold-level singing
+  and write `take dropped: no singing detected (<start>-<end>)`. No section
+  or command-status exceptions, including surviving rejected/unlabeled takes.
+  Added unit and pipeline coverage for trim ends, internal frames, rolls,
+  inclusive threshold, disabled mode, all sections, drops, and warning output.
+- Added `scripts/ablate_memos.py`, which requires existing caches and blocks
+  AST construction explicitly. Regenerated oracle speech attachments for each
+  setting, with no clip exports or threshold tuning. Memo1 uses numeric fixture
+  RMS, legacy command truth normalized with A/B/C variants, and the three
+  existing test_real_memo expected take spans (the fixture has no take: rows).
+  UNCLEAR is excluded; positive hits require matching section and >=50% truth
+  coverage. Rejected truth is excluded from positive hits but included in
+  section-agnostic boundary matching. Saved both tables and detailed JSON to
+  `outputs/{memo1,memo2}_eval/ablation.*` plus `outputs/ablation_report.md`.
+- Memo2 results (none / protect only / trim only / both):
+  - Frame accuracy: **0.914706 / 0.920588 / 0.914706 / 0.920588**.
+  - Music recall: **0.998012** in all cases; speech recall:
+    **0.793103 / 0.931034 / 0.793103 / 0.931034**; silence recall **0.655405**.
+  - Commands detected: **7/9 / 8/9 / 7/9 / 8/9**; positive take hits:
+    **2/4 / 3/4 / 2/4 / 3/4**.
+  - Verse S/E errors: **20.250/1.260**, **20.250/1.260**,
+    **1.250/0.760**, **1.250/0.760** seconds.
+  - Rejected take: **0.620/1.190** throughout.
+  - Early chorus: **11.170/2.890**, **10.870/0.110**, **11.170/1.890**,
+    **10.870/0.110** seconds.
+  - Bridge: **4.140/0.900**, **4.140/0.900**, **0.360/0.900**,
+    **0.360/0.900** seconds. Final chorus: **38.670/0.770** throughout.
+  - Trim cases drop the instrument-only candidate **279.5-285.0 s** with
+    the specified warning. The existing unsupported-next warning at 288.5 s
+    remains. Target-next and rejection semantics were not changed.
+- Memo1 results: none and trim-only are identical: accuracy **0.859649**,
+  recalls music/speech/silence **1.0/1.0/0.555556**, command detection **3/3**,
+  positive hits **3/3**, and A/B/C S/E errors **0/0**, **0.320/0.360**,
+  **0.350/0.150** seconds. Protect-only and both lower accuracy to **0.824561**,
+  recalls to **0.968750/1.0/0.500000**, and worsen B end error to **1.140 s**;
+  oracle detection/hits remain 3/3. A/C boundaries are unchanged.
+- Default decision: **protect_speech_runs=False, edge_trim=True**. The initial
+  both-on check failed the unchanged real-memo test at its existing >=0.85
+  accuracy assertion; the original fixed mock speech keys also lost take B
+  after protection shifted speech boundaries. Oracle ablation isolated the
+  regression to protection, while trimming alone preserved every memo1 metric
+  and boundary. No test_real_memo assertion or expected boundary was edited.
+  Fixed thresholds remain **1.0 s** and **0.0018**, with no tuning.
+- Updated README Known limitations with short-command risk, in-sample trim
+  provenance (memo2 AUC 0.987, checked only on memo1 singing), flag defaults,
+  and the reproducible ablation command. Updated the older diagnostic replay
+  to explicitly disable both fixes when verifying saved pre-fix regions.
+- Input score SHA-256 values unchanged: memo2
+  `EFFC91F24B4A8BF53265F8720FF53200A883F868E7A27D9BADBA4AD68B546D77`;
+  memo1 `8A299EB2948A8BCA5651CC1BF90F27FDED8DA1D340F2213F279FD531A7703A96`.
+  No AST rescoring, dependency additions, or fixture data edits.
+- Validation: focused suites **27 passed**; full
+  `.\.venv\Scripts\python.exe -m pytest` **152 passed** in 8.08 s, with
+  the three existing audioread deprecation warnings. The unchanged
+  `test_real_memo.py` passes under the chosen defaults. `git diff --check`
+  passed. Preserved the earlier uncommitted diagnostics work and session log.

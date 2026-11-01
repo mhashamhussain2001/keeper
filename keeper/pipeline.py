@@ -18,6 +18,7 @@ from keeper.labels import LabelParser, MockLabelParser
 from keeper.regions import absorb_short, merge_frames
 from keeper.segment_ast import ASTScorer, Scorer
 from keeper.songmap import build_songmap
+from keeper.trim import trim_takes
 from keeper.types import Region, SongMap
 from keeper.unlabeled import find_unlabeled
 
@@ -90,6 +91,8 @@ def run_pipeline(
     }
     takes, warnings = cut_takes(regions, commands, str(source), config)
     takes.extend(find_unlabeled(regions, [take for take, _ in takes], str(source), config))
+    takes, trim_warnings = trim_takes(takes, frame_scores, config)
+    warnings.extend(trim_warnings)
     songmap = build_songmap(takes, str(source))
     destination.mkdir(parents=True, exist_ok=True)
     if not no_export:

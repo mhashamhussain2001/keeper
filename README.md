@@ -22,6 +22,22 @@ Run the fixture without audio, model loading, or clip export:
 
 AST filterbank features use the transformers numpy fallback because no torchaudio release matches torch 2.14.1; results in this repo are measured on that path.
 
+Commands shorter than about 0.5 s may be missed.
+
+`trim_singing_min=0.0018` was fit in-sample on memo2 (singing-group AUC 0.987) and checked only on memo1 singing frames.
+
+`KeeperConfig(edge_trim=True)` trims take edges by default. Speech-run protection
+is available with `protect_speech_runs=True`, using `protect_speech_run_s=1.0`.
+It defaults off because the cached memo1 ablation lowered frame accuracy from
+0.859649 to 0.824561 and worsened the second take's end boundary. Set both
+`protect_speech_runs=False` and `edge_trim=False` to reproduce the pre-fix behavior.
+
+Run the cached-score, oracle-command ablation without loading AST:
+
+```powershell
+.\.venv\Scripts\python.exe scripts/ablate_memos.py
+```
+
 ## Local web UI
 
 From the repo root, install the web dependencies, create a playable demo, and start Keeper:

@@ -50,3 +50,22 @@ def test_island_voting_precedes_mode_filter() -> None:
                            "speech": [0.1, 0.1, 0.1, 0.9, 0.9, 0.9]})
     labels, _ = frame_labels_from_scores(scores, np.array([-10.0] * 4 + [-80.0, -10.0]), cfg)
     assert labels == ["music"] * 4 + ["silence", "speech"]
+
+
+def test_sustained_speech_survives_music_majority_at_eight_seconds() -> None:
+    """Return None after checking a 2.5-second raw speech run survives an eight-second music island."""
+    labels: list[FrameLabel] = ["music"] * 11 + ["speech"] * 5
+    assert island_vote(labels, KeeperConfig(protect_speech_runs=True)) == labels
+    assert island_vote(labels, KeeperConfig(protect_speech_runs=False)) == ["music"] * 16
+
+
+def test_single_speech_frame_is_not_protected() -> None:
+    """Return None after checking an isolated minority speech frame still follows the music vote."""
+    labels: list[FrameLabel] = ["music"] * 4 + ["speech"] + ["music"] * 4
+    assert island_vote(labels, KeeperConfig(protect_speech_runs=True)) == ["music"] * 9
+
+
+def test_protection_is_inclusive_and_does_not_join_separate_runs() -> None:
+    """Return None after checking exactly one second qualifies while separated half-second runs do not."""
+    labels: list[FrameLabel] = ["speech"] * 2 + ["music"] * 5 + ["speech", "music", "speech"]
+    assert island_vote(labels, KeeperConfig(protect_speech_runs=True)) == ["speech"] * 2 + ["music"] * 8
