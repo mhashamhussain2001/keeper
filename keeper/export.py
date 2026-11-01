@@ -49,4 +49,4 @@ def export_clips(y: np.ndarray, sr: int, songmap: SongMap, out_dir: str | Path, 
                 raise ValueError("A clip cannot overwrite a source file")
             sf.write(clip_path, clip, sr, subtype="PCM_16")
             sections[section].append(replace(take, clip_path=str(clip_path)))
-    return SongMap(songmap.source_file, sections)
+    return SongMap(songmap.source_file, sections, parser=songmap.parser)

@@ -3,6 +3,7 @@
 import argparse
 import json
 from collections import Counter
+from collections.abc import Callable
 from math import ceil
 from pathlib import Path
 
@@ -33,9 +34,12 @@ def run_pipeline(
     rms_json: str | Path | None = None,
     no_export: bool = False,
     duration_s: float | None = None,
+    progress: Callable[[str], None] | None = None,
 ) -> tuple[SongMap, list[Region], list[str]]:
     """Return the exported song map, scored regions, and warnings after writing pipeline artifacts."""
     config = cfg if cfg is not None else KeeperConfig()
+    if progress is not None:
+        progress("loading audio")
     source = Path(audio_path).resolve()
     destination = Path(out_dir).resolve()
     if destination == source.parent:
@@ -68,6 +72,8 @@ def run_pipeline(
             y = y[:round(duration_s * config.sample_rate)]
         rms = rms_db_per_frame(y, config.sample_rate, config.hop_s)
         duration = float(len(y) / config.sample_rate)
+    if progress is not None:
+        progress("scoring audio (cached AST)" if scores_csv is not None else "scoring audio (AST)")
     if scores_csv is not None:
         scores = pd.read_csv(scores_csv)
     else:
@@ -87,6 +93,8 @@ def run_pipeline(
             group: float((overlapping[group] * weights).sum() / weights.sum()) for group in (*SCORE_GROUPS, "music")
         }
     speech = [region for region in regions if region.kind == "speech"]
+    if progress is not None:
+        progress("reading commands (Spark)" if isinstance(parser, MuseSparkLabelParser) else "reading commands (mock)")
     padding = getattr(parser, "audio_padding_s", 0.0)
     clips = [(y[round(max(0.0, region.start - padding) * config.sample_rate):
                  round(min(duration, region.end + padding) * config.sample_rate)].copy(), config.sample_rate, region)
@@ -103,13 +111,18 @@ def run_pipeline(
             region.kind = "music" if label.intent == "performance" else "silence"
             del commands[region.start]
     regions = merge_adjacent(regions)
+    if progress is not None:
+        progress("cutting takes")
     takes, warnings = cut_takes(regions, commands, str(source), config)
     warnings = parser_warnings + warnings
     takes.extend(find_unlabeled(regions, [take for take, _ in takes], str(source), config))
     takes, trim_warnings = trim_takes(takes, frame_scores, config)
     warnings.extend(trim_warnings)
     songmap = build_songmap(takes, str(source))
+    songmap.parser = "spark" if isinstance(parser, MuseSparkLabelParser) else "mock"
     destination.mkdir(parents=True, exist_ok=True)
+    if progress is not None:
+        progress("exporting clips")
     if not no_export:
         songmap = export_clips(y, config.sample_rate, songmap, destination, config.fade_ms)
     songmap.to_json(destination / "songmap.json")

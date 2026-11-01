@@ -35,5 +35,5 @@ def build_songmap(takes_with_labels: list[tuple[Take, CommandLabel]], source_fil
             take_id = f"{base_id}-{occurrence}"
         used_ids.add(take_id)
         section_takes.append(replace(take, id=take_id, section=section, variant=variant,
-                                     source_file=source_file, note=label.note))
+                                     source_file=source_file, note=label.note, heard=label.heard))
     return SongMap(source_file, sections)

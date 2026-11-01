@@ -15,6 +15,7 @@ import soundfile as sf
 from starlette.types import Message, Scope
 
 import app.server as server
+import app.processing as processing
 import keeper.pipeline as pipeline
 from keeper.types import SongMap, Take
 
@@ -77,6 +78,8 @@ def memo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(server, "settings", server.Settings(
         outputs_root=tmp_path / "outputs", uploads_root=tmp_path / "uploads",
     ))
+    monkeypatch.setattr(processing, "load_dotenv", lambda: False)
+    monkeypatch.delenv("BASETEN_API_KEY", raising=False)
     directory = server.settings.outputs_root / "demo"
     clips = directory / "clips"
     clips.mkdir(parents=True)
@@ -171,6 +174,7 @@ def test_upload_runs_pipeline_offline_and_returns_playable_unlabeled_take(
 ) -> None:
     """Return None after checking sanitized uploads run the real pipeline with an empty mock parser."""
     monkeypatch.setattr(pipeline, "ASTScorer", MusicScorer)
+    monkeypatch.setattr(server, "start_processing", lambda memo_id: processing.process_memo(memo_id, server.settings))
     audio = io.BytesIO()
     y = (0.1 * np.sin(2 * np.pi * 220 * np.arange(64000) / 16000)).astype(np.float32)
     sf.write(audio, y, 16000, format="WAV", subtype="PCM_16")
@@ -191,14 +195,19 @@ def test_upload_runs_pipeline_offline_and_returns_playable_unlabeled_take(
 def test_upload_pipeline_failure_returns_json_without_listing_partial_memo(
     memo: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Return None after checking pipeline failures provide JSON errors and hide partial results."""
+    """Return None after checking background failures provide status errors and hide partial results."""
     def fail_pipeline(*args: Any, **kwargs: Any) -> None:
         """Return no result because this pipeline run simulates a missing local AST model."""
         raise RuntimeError("AST model is not cached")
 
-    monkeypatch.setattr(server, "run_pipeline", fail_pipeline)
-    response = upload("draft.wav", b"dummy audio")
-    assert response.status == 500 and "AST model is not cached" in response.json()["detail"]
+    monkeypatch.setattr(processing, "run_pipeline", fail_pipeline)
+    monkeypatch.setattr(server, "start_processing", lambda memo_id: processing.process_memo(memo_id, server.settings))
+    audio = io.BytesIO()
+    sf.write(audio, np.zeros(1600, dtype=np.float32), 16000, format="WAV")
+    response = upload("draft.wav", audio.getvalue())
+    assert response.status == 201
+    status = request("GET", f"/api/memos/{response.json()['memo_id']}/status").json()
+    assert status["state"] == "failed" and "AST model is not cached" in status["error"]
     assert request("GET", "/api/memos").json() == ["demo"]
 
 
@@ -213,3 +222,96 @@ def test_static_home_page() -> None:
     response = request("GET", "/")
     assert response.status == 200 and "text/html" in response.headers["content-type"]
     assert b"Play selected back to back" in response.body
+
+
+@pytest.mark.parametrize("parser_name", ["mock", "spark"])
+def test_status_lifecycle_and_frontend_json(memo: Path, monkeypatch: pytest.MonkeyPatch, parser_name: str) -> None:
+    """Return None after checking stages, parser selection, heard propagation, and status/detail shapes."""
+    monkeypatch.setattr(pipeline, "ASTScorer", MusicScorer)
+    if parser_name == "spark":
+        monkeypatch.setenv("BASETEN_API_KEY", "synthetic-test-key")
+    monkeypatch.setattr(server, "start_processing", lambda memo_id: processing.process_memo(memo_id, server.settings))
+    audio = io.BytesIO()
+    sf.write(audio, np.full(64000, 0.1, dtype=np.float32), 16000, format="WAV")
+    memo_id = upload("stages.wav", audio.getvalue()).json()["memo_id"]
+    result = request("GET", f"/api/memos/{memo_id}/status")
+    assert result.status == 200
+    status = result.json()
+    assert status["state"] == "done" and status["error"] is None and status["parser"] == parser_name
+    assert [row["stage"] for row in status["history"]] == ["queued", "loading audio", "scoring audio (AST)",
+        f"reading commands ({'Spark' if parser_name == 'spark' else 'mock'})", "cutting takes", "exporting clips", "done"]
+    assert all(row["updated_at"] for row in status["history"])
+    detail = request("GET", f"/api/memos/{memo_id}").json()
+    assert detail["songmap"]["parser"] == parser_name
+    assert "heard" in detail["songmap"]["sections"]["unlabeled"][0]
+
+
+def test_upload_returns_before_local_thread_finishes(memo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Return None after checking a real background thread lets the upload return before processing completes."""
+    from threading import Event
+    entered, finish = Event(), Event()
+    threads = []
+
+    def blocked_pipeline(*args: Any, **kwargs: Any) -> None:
+        """Return None after allowing the test to release its simulated long pipeline."""
+        entered.set()
+        if not finish.wait(5):
+            raise RuntimeError("Test did not release background processing")
+
+    def start(memo_id: str) -> None:
+        """Return None after recording the real background thread for deterministic cleanup."""
+        threads.append(processing.start_local_processing(memo_id, server.settings))
+
+    monkeypatch.setattr(processing, "run_pipeline", blocked_pipeline)
+    monkeypatch.setattr(server, "start_processing", start)
+    audio = io.BytesIO()
+    sf.write(audio, np.zeros(1600, dtype=np.float32), 16000, format="WAV")
+    try:
+        result = upload("background.wav", audio.getvalue())
+        assert result.status == 201 and entered.wait(2) and threads[0].is_alive()
+        memo_id = result.json()["memo_id"]
+        assert request("GET", f"/api/memos/{memo_id}/status").json()["state"] == "running"
+    finally:
+        finish.set()
+        for thread in threads:
+            thread.join(5)
+    assert request("GET", f"/api/memos/{memo_id}/status").json()["state"] == "done"
+
+
+@pytest.mark.parametrize("kind", ["invalid", "empty", "size", "duration"])
+def test_upload_validation(memo: Path, monkeypatch: pytest.MonkeyPatch, kind: str) -> None:
+    """Return None after checking corrupt, empty, oversized, and over-duration audio cannot be queued."""
+    import app.uploads as uploads
+    from unittest.mock import Mock
+    start = Mock()
+    monkeypatch.setattr(server, "start_processing", start)
+    audio = io.BytesIO()
+    sf.write(audio, np.zeros(32000, dtype=np.float32), 16000, format="WAV")
+    content = audio.getvalue()
+    if kind == "invalid":
+        content = b"not a wav"
+    elif kind == "empty":
+        content = b""
+    elif kind == "size":
+        monkeypatch.setattr(uploads, "MAX_UPLOAD_BYTES", 100)
+    else:
+        monkeypatch.setattr(uploads, "MAX_AUDIO_SECONDS", 1.0)
+    response = upload("bad.wav", content)
+    assert response.status == 400 and isinstance(response.json()["detail"], str)
+    start.assert_not_called()
+    assert request("GET", "/api/memos").json() == ["demo"]
+
+
+def test_environment_storage_settings(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Return None after checking storage roots come from environment variables without changing local defaults."""
+    monkeypatch.setenv("KEEPER_OUTPUTS_DIR", str(tmp_path / "mounted-outputs"))
+    monkeypatch.setenv("KEEPER_UPLOADS_DIR", str(tmp_path / "mounted-uploads"))
+    settings = server.Settings()
+    assert settings.outputs_root == tmp_path / "mounted-outputs"
+    assert settings.uploads_root == tmp_path / "mounted-uploads"
+
+
+def test_status_legacy_and_missing(memo: Path) -> None:
+    """Return None after checking legacy demos are done and nonexistent jobs return 404."""
+    assert request("GET", "/api/memos/demo/status").json()["state"] == "done"
+    assert request("GET", "/api/memos/absent/status").status == 404

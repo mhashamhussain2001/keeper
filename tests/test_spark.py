@@ -133,3 +133,5 @@ def test_pipeline_two_pass_padding_and_reject(tmp_path: Path, intent: str, expec
     assert sf.info(io.BytesIO(base64.b64decode(url.split(",", 1)[1]))).duration == pytest.approx(1.6)
     if intent == "reject":
         assert songmap.sections["rejected"][0].end == 8.0
+        assert songmap.sections["rejected"][0].heard == "that's the verse"
+    assert songmap.parser == "spark"

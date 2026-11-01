@@ -56,6 +56,7 @@ class Take:
     source_file: str
     note: str | None
     clip_path: str | None
+    heard: str | None = None
 
     def to_dict(self) -> dict:
         """Return a JSON-serializable take dictionary."""
@@ -68,6 +69,7 @@ class SongMap:
 
     source_file: str
     sections: dict[str, list[Take]]
+    parser: str | None = None
 
     def to_dict(self) -> dict:
         """Return a JSON-serializable song map dictionary."""
@@ -81,7 +83,7 @@ class SongMap:
     def from_json(cls, path: str | Path) -> SongMap:
         """Return a song map reconstructed from a UTF-8 JSON file."""
         data = json.loads(Path(path).read_text(encoding="utf-8"))
-        return cls(source_file=data["source_file"], sections={
+        return cls(source_file=data["source_file"], parser=data.get("parser"), sections={
             section: [Take(**take) for take in takes]
             for section, takes in data["sections"].items()
         })

@@ -117,12 +117,11 @@ Implementation choices beyond the skeleton spec:
   and a UTC timestamp including microseconds. Upload extensions are normalized to
   lowercase and restricted to WAV, MP3, M4A, FLAC, OGG, AIF, and AIFF; the existing
   audio loader determines whether each file can actually be decoded.
-- Uploads call `run_pipeline` directly with `MockLabelParser` and a per-memo empty
-  `mock_labels.json`, equivalent to the requested mock CLI mode. Processing uses
-  the existing local AST scorer and exporter; an uncached model produces a JSON
-  error. Success returns HTTP 201; unsupported extensions return 400; processing
-  failures return 500 with a `detail` message. Failed uploads retain their source
-  and partial artifacts for inspection, but no song map is listed as complete.
+- Uploads validate audio, return HTTP 201 with a memo ID, and process in a local
+  background thread. With `BASETEN_API_KEY` they use Spark, otherwise an empty
+  mock parser. Poll `/api/memos/<id>/status` for queued/running/done/failed and
+  timestamped stages. Failed jobs retain their source and diagnostic artifacts
+  but do not appear in the completed memo list. Invalid uploads return 400.
 - Selection and decoded audio caches last only for the current memo. Deselecting
   and selecting again moves a take to the end; switching memos clears selection
   and stops playback. Starting another playback replaces the active queue.
@@ -142,3 +141,40 @@ Implementation choices beyond the skeleton spec:
   Windows event-loop wakeup sockets initialize before each test's network guard;
   actual API tests remain socket-free, and upload tests stub only the AST scorer.
   Browser tests are not included; manual listening remains the playback check.
+
+## Modal deployment
+
+Local startup remains `.\.venv\Scripts\python.exe -m uvicorn app.server:app`.
+`KEEPER_OUTPUTS_DIR` and `KEEPER_UPLOADS_DIR` optionally override local storage;
+their defaults are still `outputs/` and `data/uploads/`. Uploads accept supported
+audio files up to 50 MiB and ten decoded minutes. Decoding is bounded to 601
+seconds during validation. The browser polls every three seconds, shows elapsed
+time, opens completed memos, and displays processing errors, parser, and heard text.
+
+Modal deployment uses the preconfigured Modal client (tested with 1.6.3) and the
+existing secret named `baseten`; no credentials belong in source or build context.
+
+```powershell
+.\.venv\Scripts\python.exe -m modal deploy modal_app.py
+.\.venv\Scripts\python.exe scripts/seed_modal.py https://YOUR-DEPLOYED-URL.modal.run
+```
+
+The Debian/Python 3.11 image installs the pinned requirements and ffmpeg, copies
+only application packages and deployment files, and downloads AST at build time
+into `/opt/huggingface`. Runtime AST loading remains `local_files_only=True`.
+GPU scoring selects CUDA automatically and uses batch size 32; CPU keeps batch 8.
+The optional CUDA test compares every score against CPU with absolute tolerance
+1e-4 and skips when CUDA is unavailable. No pipeline thresholds or defaults change.
+
+The `keeper-data` v2 Volume mounts at `/data`. Uploads and every status stage are
+committed; web reads and GPU jobs reload before reading. One CPU web container
+and one T4 worker may run, both scale to zero, with idle windows of 60/30 seconds.
+GPU jobs have a 30-minute timeout. The worker receives the Baseten secret; the
+web container does not. Completed legacy local demos without status.json remain
+readable. Local daemon jobs do not survive a local server restart.
+
+`scripts/seed_modal.py` uploads only `data/memo2.wav`, waits for completion,
+checks `/api/memos`, and writes `outputs/modal_seed_report.json` with total,
+upload/validation, queued, and processing-stage timings plus GPU/parser metadata.
+It never uploads `data/uploads/` or private files. Processing status is atomic and
+includes transition history for timing; there is no automatic retry of failed jobs.

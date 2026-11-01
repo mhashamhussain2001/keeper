@@ -34,6 +34,10 @@
     .summary { color:var(--muted); margin:0; font-variant-numeric:tabular-nums; }
     #status { min-height:24px; margin:15px 0; color:var(--muted); }
     #status.error { color:var(--danger); }
+    .processing-panel { padding:18px; margin:16px 0; border:1px solid var(--line); border-radius:12px; }
+    .processing-panel[hidden] { display:none; }
+    .processing-panel p { margin:6px 0; }
+    .take-heard { color:var(--muted); font-size:12px; margin:8px 0; }
     .timeline-panel { padding:24px; background:var(--panel); border:1px solid var(--line); border-radius:12px; }
     .panel-heading { display:flex; justify-content:space-between; gap:20px; align-items:center; }
     h2 { font-size:15px; margin:0; font-weight:600; }
@@ -109,6 +113,11 @@
       <p id="memo-summary" class="summary"></p>
     </div>
     <p id="status" role="status" aria-live="polite">Loading your memos…</p>
+    <aside id="processing-panel" class="processing-panel" hidden aria-label="Memo processing">
+      <strong id="processing-name">Processing memo</strong>
+      <p id="processing-stage" role="status" aria-live="polite">Uploading audio</p>
+      <p><span id="processing-elapsed" role="timer" aria-live="off">0:00</span> elapsed</p>
+    </aside>
     <section class="timeline-panel" aria-labelledby="timeline-heading">
       <div class="panel-heading">
         <h2 id="timeline-heading">The whole memo</h2>
@@ -343,6 +352,7 @@
           play.addEventListener("click", () => playTakes([take]));
           footer.append(element("span", "take-duration", take.clip_url ? `${seconds(take.end - take.start)} duration` : "No clip exported"), play);
           card.append(label, element("p", "take-times", `${seconds(take.start)} — ${seconds(take.end)}`), footer);
+          if (take.heard) card.append(element("p", "take-heard", take.heard));
           column.append(card);
         }
         map.append(column);
@@ -366,7 +376,7 @@
         const data = await request(`/api/memos/${encodeURIComponent(id)}`);
         if (memoEpoch !== state.memoEpoch) return;
         state.takes = Object.entries(data.songmap.sections).flatMap(([section, takes]) => takes.map(take => ({ ...take, section })));
-        $("memo-summary").textContent = `${seconds(data.duration_s)} · ${state.takes.length} takes`;
+        $("memo-summary").textContent = `${seconds(data.duration_s)} · ${state.takes.length} takes · Parser: ${data.songmap.parser || "legacy / unknown"}`;
         renderTimeline(data);
         renderSongMap(data);
         updateSelection();
@@ -394,6 +404,16 @@
       await loadMemo(id);
     }
 
+    async function waitForMemo(memoId) {
+      while (true) {
+        const progress = await request(`/api/memos/${encodeURIComponent(memoId)}/status`);
+        $("processing-stage").textContent = progress.stage;
+        if (progress.state === "done") return;
+        if (progress.state === "failed") throw new Error(progress.error || "Memo processing failed.");
+        await new Promise(resolve => setTimeout(resolve, 3000));
+      }
+    }
+
     $("memo-picker").addEventListener("change", event => { if (event.target.value) loadMemo(event.target.value); });
     $("upload-button").addEventListener("click", () => $("upload-file").click());
     $("stop").addEventListener("click", stopPlayback);
@@ -401,20 +421,32 @@
     $("upload-file").addEventListener("change", async event => {
       const file = event.target.files[0];
       if (!file) return;
+      if (file.size > 50 * 1024 * 1024) { status("Audio upload must be at most 50 MB.", true); event.target.value = ""; return; }
       stopPlayback();
       state.uploading = true;
       $("upload-button").disabled = true;
       $("memo-picker").disabled = true;
       $("upload-button").textContent = "Processing…";
       updateSelection();
-      status("Processing your recording. Keep this page open; longer memos can take a while.");
+      status("Uploading and validating your recording.");
+      $("processing-panel").hidden = false;
+      $("processing-name").textContent = file.name;
+      $("processing-stage").textContent = "Uploading and validating audio";
+      $("processing-elapsed").textContent = "0:00";
+      const started = performance.now();
+      const timer = setInterval(() => { $("processing-elapsed").textContent = seconds((performance.now() - started) / 1000); }, 1000);
       try {
         const form = new FormData();
         form.append("file", file);
         const result = await request("/api/memos", { method:"POST", body:form });
+        status("Processing your recording. The stage below updates every three seconds.");
+        await waitForMemo(result.memo_id);
         await refreshMemos(result.memo_id);
-      } catch (error) { status(error.message, true); }
+        $("processing-stage").textContent = "Done";
+      } catch (error) { $("processing-stage").textContent = error.message; status(error.message, true); }
       finally {
+        clearInterval(timer);
+        $("processing-elapsed").textContent = seconds((performance.now() - started) / 1000);
         state.uploading = false;
         $("upload-button").disabled = false;
         $("memo-picker").disabled = false;

@@ -567,3 +567,89 @@
   fallbacks, persistent cache/budget/WAV checks, all six mappings, two-pass
   performance/noise relabels, reject cutting, padding, next warning, and
   unmatched none/noise truth. `git diff --check` passed.
+
+## 2026-10-31 - Modal GPU deployment and polling upload flow (billing blocked)
+
+- Read `AGENTS.md` and `private/prompts/codex_prompt_modal_deploy.md`.
+  Consulted current official Modal docs for ASGI, spawn, image construction,
+  GPU pricing, and Volume commit/reload behavior. Existing Modal client is
+  **1.6.3**. Did not install Modal, run setup, recreate the Baseten secret,
+  or read/print secret values. No dependencies or requirements pins changed.
+- Moved shared Settings into `app/storage.py` (still importable from
+  app.server), reading `KEEPER_OUTPUTS_DIR` / `KEEPER_UPLOADS_DIR` with the
+  original local defaults. Added atomic status.json with the four requested
+  fields plus transition history, parser, and GPU metadata for timing.
+- Added `app/uploads.py`: supported extension plus actual decoded-audio
+  validation; bounded copy at **50 MiB** and bounded decoding at 601 seconds
+  to reject durations above **600 seconds**, including corrupt/empty input.
+  Invalid uploads return clear 400 errors before dispatch. An empty-file
+  check avoids an audioread decoder handle leak on Windows; if a failed
+  decoder still holds its rejected input open, cleanup does not mask the 400.
+- POST /api/memos saves validated audio, records queued, dispatches through
+  start_processing(memo_id), and returns HTTP 201 with memo_id. New status
+  endpoint works for queued/running/failed jobs. Background processing uses
+  Spark when BASETEN_API_KEY exists, otherwise an empty mock parser; local
+  processing runs in a daemon thread. Exceptions publish failed plus message
+  and remove incomplete song maps from the completed list.
+- Added optional pipeline progress callbacks for loading audio, scoring AST,
+  reading commands, cutting, and exporting. Default/no-callback behavior and
+  all KeeperConfig fields remain unchanged. SongMap stores parser; Take stores
+  heard from its command, preserved through naming, export, and JSON loading.
+- AST now selects CUDA when available, moves model and inputs to that device,
+  and uses batch **32 on CUDA / original 8 on CPU**. Added an offline CUDA-only
+  test comparing all timestamp/raw/group scores with CPU at absolute tolerance
+  **1e-4**. This machine has no CUDA, so that test skipped; real GPU equivalence
+  and runtime remain unverified because cloud deployment was blocked.
+- Added modal_app.py: App keeper; Debian slim / Python 3.11 / ffmpeg /
+  libsndfile1; exact requirements.txt; explicitly copied keeper/, eval/, app/,
+  deployment module, and requirements only. Automatic source inclusion is off;
+  no .env, private/, recordings, uploads, outputs, or repository root dump is
+  sent as build source. AST model and feature extractor are downloaded at
+  build time into HF_HOME=/opt/huggingface; runtime remains local_files_only.
+- keeper-data uses **Volume v2** at /data. CPU web hooks reload before reads
+  and commit uploads before GPU spawn. Worker reloads before processing and
+  commits every stage and completion/failure. T4 worker: 30-minute timeout,
+  two CPU cores, 8192 MiB memory, existing baseten secret, max one container,
+  min zero, 30 s idle window. CPU web: one core, 2048 MiB, max one container,
+  min zero, 60 s idle window. Two containers maximum across these functions;
+  both scale to zero. Only the worker receives the Baseten secret.
+- Frontend shows a processing panel, stage and elapsed time, polls every
+  three seconds, opens completed memos, and displays failure messages. Take
+  cards show heard text via textContent; memo summary shows parser. Existing
+  Ideas display and initially collapsed rejected sections remain intact.
+- Added scripts/seed_modal.py: accepts a deployed base URL, uploads only
+  data/memo2.wav, polls status, computes stage durations from history, checks
+  the completed memo list, and writes outputs/modal_seed_report.json. Uses
+  Python standard library HTTP; no new dependency. Offline seed test verifies
+  fixed source, stage timing, and completed listing without network or Modal.
+- Validation: final `.\.venv\Scripts\python.exe -m pytest`: **180 passed,
+  1 skipped**, five warnings, in **13.43 s**. Skip is CUDA unavailable;
+  warnings are the three existing audioread deprecations and two decoder
+  warnings intentionally triggered by the corrupt-upload test. Includes
+  queued/running/done/failed, real local-thread nonblocking behavior, all
+  upload limits, both parser choices, transcript/parser JSON, and legacy
+  status compatibility. Unchanged test_real_memo passes. JavaScript parses
+  with node --check; git diff --check passes.
+- Deployment attempt: `.\.venv\Scripts\python.exe -m modal deploy
+  modal_app.py` initially stopped on Windows cp1252 console encoding of a
+  Unicode apt log. Retried with `.\.venv\Scripts\python.exe -X utf8 -m
+  modal deploy modal_app.py`. All pinned packages installed; image and AST
+  model build **succeeded**, final image `im-CeaYGIpzr0SfOU8TSAs2zg`.
+  The existing numpy filterbank warning is preserved (no torchaudio added).
+- **External blocker:** Modal then rejected deployment with
+  **"Please add a payment method to use T4 GPU functions."** No public URL
+  was returned. Therefore memo2 was not uploaded, /api/memos could not be
+  checked live, and no end-to-end/stage/GPU execution timings are available.
+  User was asked to add a payment method in Modal Billing and reply ready;
+  deployment/seeding can resume with the same tested commands after that.
+- Modal API differences: none required; current names asgi_app,
+  process_memo.spawn, scaledown_window, Image.run_function, Volume.commit /
+  reload match the requested approach. Decisions beyond the spec: v2 Volume
+  per current docs; literal 50 MiB interpretation; bounded validation decode;
+  status history and GPU/parser metadata; atomic replacement; existing demos
+  without status treated as done; HTTP 201 retained; local daemon threads
+  stop with their server; failed jobs are retained for inspection without
+  automatic retry; serial default Modal inputs avoid reload while files are
+  open; explicit resource/idle caps and four OpenMP/MKL threads; SDK-managed
+  Modal dependency left out of application requirements; UTF-8 CLI on Windows.
+  No thresholds/defaults, audio, fixture scores, secrets, or commits changed.
