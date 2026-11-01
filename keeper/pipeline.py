@@ -14,8 +14,8 @@ from keeper.config import SCORE_GROUPS, KeeperConfig
 from keeper.cut import cut_takes
 from keeper.export import export_clips
 from keeper.frames import frame_labels_from_scores, frame_scores_from_windows
-from keeper.labels import LabelParser, MockLabelParser
-from keeper.regions import absorb_short, merge_frames
+from keeper.labels import LabelParser, MockLabelParser, MuseSparkLabelParser
+from keeper.regions import absorb_short, merge_frames, merge_adjacent
 from keeper.segment_ast import ASTScorer, Scorer
 from keeper.songmap import build_songmap
 from keeper.trim import trim_takes
@@ -62,6 +62,10 @@ def run_pipeline(
         y = np.empty(0, dtype=np.float32)
     else:
         y = load_audio(source, config.sample_rate)
+        if duration_s is not None:
+            if not np.isfinite(duration_s) or not 0 <= duration_s <= len(y) / config.sample_rate:
+                raise ValueError("duration_s must fit the source audio")
+            y = y[:round(duration_s * config.sample_rate)]
         rms = rms_db_per_frame(y, config.sample_rate, config.hop_s)
         duration = float(len(y) / config.sample_rate)
     if scores_csv is not None:
@@ -82,14 +86,25 @@ def run_pipeline(
         region.mean_scores = {
             group: float((overlapping[group] * weights).sum() / weights.sum()) for group in (*SCORE_GROUPS, "music")
         }
-    commands = {
-        region.start: parser.parse(
-            y[round(region.start * config.sample_rate):round(region.end * config.sample_rate)].copy(),
-            config.sample_rate, region,
-        )
-        for region in regions if region.kind == "speech"
-    }
+    speech = [region for region in regions if region.kind == "speech"]
+    padding = getattr(parser, "audio_padding_s", 0.0)
+    clips = [(y[round(max(0.0, region.start - padding) * config.sample_rate):
+                 round(min(duration, region.end + padding) * config.sample_rate)].copy(), config.sample_rate, region)
+             for region in speech]
+    if isinstance(parser, MuseSparkLabelParser):
+        parser.preflight(clips)
+    commands = {region.start: parser.parse(audio, sr, region) for audio, sr, region in clips}
+    parser_warnings = []
+    for region in speech:
+        label = commands[region.start]
+        if label.target == "next":
+            parser_warnings.append(f"label-before-take not supported: {label.heard or ''}")
+        if label.intent in ("performance", "noise"):
+            region.kind = "music" if label.intent == "performance" else "silence"
+            del commands[region.start]
+    regions = merge_adjacent(regions)
     takes, warnings = cut_takes(regions, commands, str(source), config)
+    warnings = parser_warnings + warnings
     takes.extend(find_unlabeled(regions, [take for take, _ in takes], str(source), config))
     takes, trim_warnings = trim_takes(takes, frame_scores, config)
     warnings.extend(trim_warnings)
@@ -111,16 +126,20 @@ def main(argv: list[str] | None = None) -> int:
     """Return zero after running the CLI pipeline and printing a compact result summary."""
     cli = argparse.ArgumentParser(description="Organize a songwriting memo using local scores and mock commands.")
     cli.add_argument("audio_path", type=Path)
-    cli.add_argument("--parser", choices=("mock",), default="mock")
-    cli.add_argument("--mock-labels", type=Path, required=True)
+    cli.add_argument("--parser", choices=("mock", "spark"), default="mock")
+    cli.add_argument("--mock-labels", type=Path)
     cli.add_argument("--out", type=Path, required=True)
     cli.add_argument("--scores-csv", type=Path, help="Load window scores and skip AST entirely")
     cli.add_argument("--rms-json", type=Path, help="Load frame RMS without opening audio (mock parser only)")
     cli.add_argument("--no-export", action="store_true", help="Write metadata without WAV clips")
     cli.add_argument("--duration-s", type=float, help="Memo duration; defaults to meta.json with --rms-json")
     args = cli.parse_args(argv)
+    if args.parser == "mock" and args.mock_labels is None:
+        cli.error("--mock-labels is required with --parser mock")
+    parser = (MockLabelParser(args.mock_labels) if args.parser == "mock" else
+              MuseSparkLabelParser(args.out / "spark_cache.json", KeeperConfig().max_spark_calls))
     songmap, regions, warnings = run_pipeline(
-        args.audio_path, MockLabelParser(args.mock_labels), args.out, scores_csv=args.scores_csv,
+        args.audio_path, parser, args.out, scores_csv=args.scores_csv,
         rms_json=args.rms_json, no_export=args.no_export, duration_s=args.duration_s,
     )
     print("Regions: " + str(dict(Counter(region.kind for region in regions))))

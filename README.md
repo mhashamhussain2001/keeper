@@ -38,6 +38,36 @@ Run the cached-score, oracle-command ablation without loading AST:
 .\.venv\Scripts\python.exe scripts/ablate_memos.py
 ```
 
+## Spark command parsing
+
+`openai==3.41.0` (already pinned) supplies the Baseten-compatible client; no
+additional dependency is needed. Set `BASETEN_API_KEY` in your local `.env`.
+Spark sends only speech regions with 0.3 seconds of surrounding audio to
+`meta-models/muse-spark-open-1026`. The cache and attempt audit live at
+`outputs/<memo>/spark_cache.json`; the cumulative budget is 40 uncached calls
+per memo, including retries. Cache hits require no key or network access.
+
+```powershell
+.\.venv\Scripts\python.exe -m keeper.pipeline data/memo2.wav --parser spark --scores-csv outputs/memo2_scores.csv --out outputs/memo2
+.\.venv\Scripts\python.exe scripts/eval_memo.py memo2 --parser spark
+.\.venv\Scripts\python.exe scripts/eval_memo.py memo1 --parser spark
+```
+
+Evaluation requires existing scores and never constructs AST. It runs oracle
+and Spark with speech protection off and on, with edge trim on throughout,
+and writes `outputs/<memo>/spark_report.md`, `spark_results.json`, and clips
+under `protect_off/` and `protect_on/`. Memo1 uses `data/test.wav`, cropped
+to the fixture's declared 28.28 seconds, and the existing numeric score cache.
+Unannotated speech has truth intent `none`, except unmatched memo1 speech
+overlapping 19-21 seconds, which has truth `noise`. A merged region containing
+both chair noise and a truth command is scored against that command.
+
+`performance` speech becomes music and `noise` becomes silence before cutting;
+`reject` creates a take in `rejected`. Unsorted takes display as Ideas and the
+rejected section starts collapsed. `target=next` still attaches to the previous
+take and writes a warning. Spark also regressed memo1 with speech protection,
+so `protect_speech_runs=False` and `edge_trim=True` remain the defaults.
+
 ## Local web UI
 
 From the repo root, install the web dependencies, create a playable demo, and start Keeper:

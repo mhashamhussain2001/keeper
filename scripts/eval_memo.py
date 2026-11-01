@@ -231,8 +231,13 @@ def main(argv: list[str] | None = None) -> int:
     """Return zero after evaluating a memo and printing its complete Markdown report."""
     cli = argparse.ArgumentParser(description=__doc__)
     cli.add_argument("name", help="Memo stem: data/<name>.wav, data/<name>_labels.txt, outputs/<name>_scores.csv")
+    cli.add_argument("--parser", choices=("oracle", "spark"), default="oracle")
     args = cli.parse_args(argv)
-    print(evaluate_memo(args.name), end="")
+    if args.parser == "spark":
+        from scripts.spark_eval import evaluate_spark
+        print(evaluate_spark(args.name), end="")
+    else:
+        print(evaluate_memo(args.name), end="")
     return 0
 
 

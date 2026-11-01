@@ -457,3 +457,113 @@
   the three existing audioread deprecation warnings. The unchanged
   `test_real_memo.py` passes under the chosen defaults. `git diff --check`
   passed. Preserved the earlier uncommitted diagnostics work and session log.
+
+## 2026-10-31 - Baseten Muse Spark parser, intent handling, and cached evaluation
+
+- Read `AGENTS.md`; prerequisite satisfied by existing commit `1a5134b`
+  (diagnostics and protected-speech/trim ablation). Implemented real
+  `MuseSparkLabelParser` using Baseten, model
+  `meta-models/muse-spark-open-1026`, reasoning effort low, max_tokens 2000,
+  temperature 0. The installed `openai==3.41.0` was already pinned in
+  requirements.txt, so no dependency install or requirements edit was needed.
+  SDK automatic retries are disabled; the parser owns retries and accounting.
+- Module prompt includes file/keep/reject/none/performance/noise. Added strict
+  six-field JSON validation, wrapped-object extraction, one retry on bad
+  JSON/enums, truncation, empty content, or audio refusal, and final none/0
+  fallback. Compatibility fallbacks move reasoning effort to extra_body or
+  omit unsupported temperature. Cache retains every completed attempt's raw
+  response, decoded JSON, finish reason, reasoning/total tokens, latency,
+  retry index, and failure reason. Original start/end, padded WAV SHA-1, and
+  model/prompt digest form the key; results are written atomically.
+- Added config `max_spark_calls=40`, preflight budget checks, and per-attempt
+  enforcement. Prior cached attempts count toward the per-memo budget across
+  process restarts; off/on evaluation shares one parser and cache. Client and
+  dotenv/key loading are lazy, so a fully cached run needs no credentials.
+  All client invocations, including rejected compatibility arguments, count
+  conservatively against the guard. API authentication errors propagate;
+  other call/validation failures retry once and then cache none/0.
+- Speech-only clips include 0.3 s on either side, clamped to the memo, encoded
+  mono 16 kHz PCM-16 WAV in an audio_url data URL. All original speech regions
+  are parsed once before any cutting. Performance relabels to music, noise to
+  silence, adjacent regions merge, then existing cutting/trim/export runs.
+  CommandLabel retains heard/target/intent; reject creates a rejected take,
+  keep uses unsorted, and file retains spoken variant detail only in note.
+  target=next still attaches to previous and emits the requested warning.
+- Added `--parser spark` to the pipeline and `--parser {oracle,spark}` to
+  eval_memo (oracle stays default). New `scripts/spark_eval.py` handles both
+  memos with protection off/on and edge trim on, oracle comparisons, clip
+  exports, command transcripts/matches, intent/section accuracy, API usage,
+  precision/recall/confusion, unclear frames, rejected-output checks,
+  unscored unlabeled extras, and secondary boundary matches/misses/extras.
+  AST construction is explicitly blocked; missing score caches raise.
+- Decisions beyond the specification: require exactly the six response
+  fields and a non-null section for file; reject boolean/nonfinite confidence.
+  Use a 120 s SDK timeout, disable hidden SDK retries, and cache final
+  failures until audio/regions/prompt change or the cache is removed.
+  Cache is intended for sequential runs, without concurrent-writer locking.
+  Preserve the existing oracle mappings (including reject as non-command)
+  as the comparison baseline. End-to-end intent and file-section accuracy
+  include undetected truth commands as incorrect; extra speech contributes
+  truth none/noise. No API call is made for a command without detected speech.
+- Memo1 uses real data/test.wav cropped from 28.579125 s to the fixture's
+  declared 28.28 s, with fixture scores/truth/mock commands. Source audio is
+  unchanged. Oracle variants A/B/C come from mock_commands.json; Spark takes
+  use automatic Take N names. For mixed speech regions, command truth takes
+  priority over the unmatched-chair-noise exception. Protection merges chair
+  noise and chorus B into 19.5-22.5 s; Spark correctly calls the combined clip
+  file/chorus, so the real run does not independently test isolated chair-noise
+  classification. The none/noise exception is covered by an offline test.
+- UI edits are limited to the two explicitly requested behaviors: display
+  unsorted as Ideas (data key unchanged) and initially collapse rejected.
+  No other UI, Modal, activity threshold, trim threshold, or fixture changes.
+- Real first-run accounting (shared cache within each memo):
+
+  | Memo / protection | New calls | Cached regions | New total tokens | Mean new-call latency | Intent accuracy | File-section accuracy |
+  | --- | --- | --- | --- | --- | --- | --- |
+  | memo1 off | 3 | 0 | 2575 | 3.390 s | 3/3 | 3/3 |
+  | memo1 on | 1 | 2 | 963 | 3.251 s | 3/3 | 3/3 |
+  | memo2 off | 7 | 0 | 6503 | 3.933 s | 7/9 | 5/6 |
+  | memo2 on | 1 | 7 | 838 | 3.303 s | 8/9 | 6/6 |
+
+  Total **12 new calls, 10,879 tokens, zero refusals, zero retries**.
+  Reasoning effort low and temperature 0 were accepted directly. Memo2's
+  short reject command has no speech overlap in either setting; its rejected
+  performance survives as unlabeled 91.7-98.5 s. Protection recovers the
+  120.67-122.59 s file command. Both next-target bridge commands warn; the
+  second has no preceding music. Instrument-only 279.5-285.0 s is dropped.
+- Ablation, edge trim on; S/E cells are absolute seconds, in truth-take order:
+
+  | memo1 setting | Accuracy | Recall music/speech/silence | Commands | Positive hits | A S/E | B S/E | C S/E |
+  | --- | --- | --- | --- | --- | --- | --- | --- |
+  | oracle off | .859649 | 1/1/.555556 | 3/3 | 3/3 | .000/.000 | .320/.360 | .350/.150 |
+  | Spark off | .859649 | 1/1/.555556 | 3/3 | 3/3 | .000/.000 | .320/.360 | .350/.150 |
+  | oracle on | .824561 | .968750/1/.500000 | 3/3 | 3/3 | .000/.000 | .320/1.140 | .350/.150 |
+  | Spark on | .824561 | .968750/1/.500000 | 3/3 | 3/3 | .000/.000 | .320/1.140 | .350/.150 |
+
+  | memo2 setting | Accuracy | Recall music/speech/silence | Commands | Positive hits | Verse S/E | Rejected S/E | Early chorus S/E | Bridge S/E | Final chorus S/E |
+  | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+  | oracle off | .914706 | .998012/.793103/.655405 | 7/9 | 2/4 | 1.250/.760 | .620/1.190 | 11.170/1.890 | .360/.900 | 38.670/.770 |
+  | Spark off | .914706 | .998012/.793103/.655405 | 7/9 | 2/4 | 1.250/.760 | .620/1.190 | 11.170/1.890 | .360/.900 | 38.670/.770 |
+  | oracle on | .920588 | .998012/.931034/.655405 | 8/9 | 3/4 | 1.250/.760 | .620/1.190 | 10.870/.110 | .360/.900 | 38.670/.770 |
+  | Spark on | .920588 | .998012/.931034/.655405 | 8/9 | 3/4 | 1.250/.760 | .620/1.190 | 10.870/.110 | .360/.900 | 38.670/.770 |
+
+- Default decision: leave **protect_speech_runs=False, edge_trim=True**.
+  Protection plus Spark still lowers memo1 accuracy .859649 -> .824561 and
+  worsens B's end error .360 -> 1.140 s; A/C unchanged. Existing
+  test_real_memo thresholds and expected boundaries are untouched and pass.
+- Commands run: `.\.venv\Scripts\python.exe scripts/eval_memo.py memo2
+  --parser spark`, then memo1, each repeated. Second runs made **zero new
+  API calls / zero tokens**; memo2 reused 15 region accesses, memo1 six.
+  Final report-only reruns also made zero calls. Complete current reports:
+  `outputs/memo{1,2}/spark_report.md`; first-run token/latency reports and
+  JSON preserved as `spark_report_first.md` / `spark_results_first.json`.
+  Spark caches and audio exports remain ignored by Git.
+- Input score SHA-256 values unchanged: memo2
+  `EFFC91F24B4A8BF53265F8720FF53200A883F868E7A27D9BADBA4AD68B546D77`;
+  memo1 `8A299EB2948A8BCA5651CC1BF90F27FDED8DA1D340F2213F279FD531A7703A96`.
+- Validation: `.\.venv\Scripts\python.exe -m pytest`: **170 passed** in
+  7.37 s, with the three existing audioread deprecation warnings. Includes
+  mocked JSON/retry/refusal/truncation/fallback tests, both client argument
+  fallbacks, persistent cache/budget/WAV checks, all six mappings, two-pass
+  performance/noise relabels, reject cutting, padding, next warning, and
+  unmatched none/noise truth. `git diff --check` passed.

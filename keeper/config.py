@@ -45,6 +45,7 @@ class KeeperConfig:
     protect_speech_run_s: float = 1.0
     edge_trim: bool = True
     trim_singing_min: float = 0.0018
+    max_spark_calls: int = 40
     min_unlabeled_s: float = 3.0
     mode_filter_frames: int = 3
     min_region_s: dict[str, float] = field(default_factory=_default_min_region_s)
@@ -57,6 +58,8 @@ class KeeperConfig:
         """Return None after rejecting invalid pipeline settings."""
         if self.sample_rate != AUDIO_SAMPLE_RATE:
             raise ValueError("Keeper audio must use 16000 Hz")
+        if not isinstance(self.max_spark_calls, int) or self.max_spark_calls < 0:
+            raise ValueError("max_spark_calls must be a nonnegative integer")
         if any(not isfinite(value) or value <= 0 for value in (self.win_s, self.hop_s)):
             raise ValueError("win_s and hop_s must be positive and finite")
         if not isfinite(self.protect_speech_run_s) or self.protect_speech_run_s <= 0:

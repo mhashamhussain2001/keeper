@@ -185,10 +185,8 @@ def test_mock_rounding_and_noncommand_default(tmp_path: Path) -> None:
 
 
 def test_muse_stub_never_calls_api(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Return None after checking the unimplemented adapter reads only the environment."""
+    """Return None after checking parser construction never creates a client or calls a service."""
     monkeypatch.delenv("META_API_KEY", raising=False)
     monkeypatch.setattr(socket, "create_connection", _forbid_network)
     parser = MuseSparkLabelParser()
-    assert parser.api_key == ""
-    with pytest.raises(NotImplementedError, match="Muse Spark audio input not verified yet"):
-        parser.parse(np.zeros(16000, dtype=np.float32), 16000, Region(0.0, 1.0, "speech", {}))
+    assert parser.client is None and parser.calls_made == 0

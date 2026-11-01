@@ -60,3 +60,8 @@ def absorb_short(regions: list[Region], cfg: KeeperConfig) -> list[Region]:
             break
         # Each relabel merges with a neighbor, so every pass reduces region count.
     return result
+
+
+def merge_adjacent(regions: list[Region]) -> list[Region]:
+    """Return adjacent identical regions merged without applying duration-based relabeling."""
+    return _remerge(regions)

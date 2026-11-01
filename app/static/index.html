@@ -139,7 +139,7 @@
     const state = { takes:[], selected:[], buffers:new Map(), sources:[], context:null,
       epoch:0, memoEpoch:0, frame:null, busy:false, playing:null, uploading:false };
     const seconds = value => `${Number(value).toFixed(2)}s`;
-    const takeName = take => `${take.section} · ${take.variant}`;
+    const takeName = take => `${take.section === "unsorted" ? "Ideas" : take.section} · ${take.variant}`;
 
     function status(message, error = false) {
       $("status").textContent = message;
@@ -322,8 +322,8 @@
       const names = [...sectionOrder, ...Object.keys(sections).filter(name => !sectionOrder.includes(name))];
       for (const name of names) {
         if (!sections[name]?.length) continue;
-        const column = element("section", "section-column");
-        const heading = element("h3", "section-title", name);
+        const column = element(name === "rejected" ? "details" : "section", "section-column");
+        const heading = element(name === "rejected" ? "summary" : "h3", "section-title", name === "unsorted" ? "Ideas" : name);
         heading.append(element("span", "section-count", String(sections[name].length).padStart(2, "0")));
         column.append(heading);
         for (const take of state.takes.filter(item => item.section === name)) {

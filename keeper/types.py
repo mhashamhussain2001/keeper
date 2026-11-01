@@ -9,7 +9,7 @@ from typing import Literal
 
 
 FrameLabel = Literal["music", "speech", "silence"]
-Section = Literal["intro", "verse", "pre-chorus", "chorus", "bridge", "hook", "outro", "unsorted", "unlabeled"]
+Section = Literal["intro", "verse", "pre-chorus", "chorus", "bridge", "hook", "outro", "unsorted", "unlabeled", "rejected"]
 
 
 @dataclass
@@ -35,6 +35,9 @@ class CommandLabel:
     variant: str | None
     note: str | None
     confidence: float
+    heard: str | None = None
+    target: Literal["previous", "next"] = "previous"
+    intent: str | None = None
 
     def to_dict(self) -> dict:
         """Return a JSON-serializable command dictionary."""
