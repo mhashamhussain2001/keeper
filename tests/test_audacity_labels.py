@@ -4,10 +4,59 @@ from pathlib import Path
 
 import pytest
 
-from eval.audacity_labels import read_audacity_labels
+from eval.audacity_labels import CommandTruth, parse_command_truth, read_audacity_labels
 from eval.evaluate import frame_accuracy, take_boundary_error
 from keeper.config import FRAME_KINDS
 from keeper.types import Region, SongMap, Take
+
+
+@pytest.mark.parametrize("label,expected", [("SING", "music"), ("sInG", "music"), ("INST", "music"),
+                                           ("iNsT", "music"), ("SPEECH", "speech"), ("sPeEcH", "speech"),
+                                           ("UNCLEAR", "unclear"), ("uNcLeAr", "unclear")])
+def test_case_insensitive_activity_aliases(tmp_path: Path, label: str, expected: str) -> None:
+    """Return None after checking new aliases normalize before existing music-class collapsing."""
+    path = tmp_path / "labels.txt"
+    path.write_text(f"0\t1\t{label}\n", encoding="utf-8")
+    assert read_audacity_labels(path) == [(0.0, 1.0, expected)]
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("cmd:file section=chorus note=that last one", CommandTruth("file", "chorus", note="that last one")),
+    ("cmd:file\tsection=bridge target=next", CommandTruth("file", "bridge", "next")),
+    ("cmd:keep", CommandTruth("keep")), ("cmd:reject", CommandTruth("reject")),
+    ("cmd:none", CommandTruth("none")), ("cmd:file", CommandTruth("file")),
+    ("cmd:file section=verse note=two  spaces target=next", CommandTruth("file", "verse", note="two  spaces target=next")),
+])
+def test_command_truth_grammar(text: str, expected: CommandTruth) -> None:
+    """Return None after checking intents, target, and free-text notes that consume the line."""
+    assert parse_command_truth(text) == expected
+
+
+@pytest.mark.parametrize("text", ["file section=verse", "cmd:", "cmd:unknown", "cmd:file section=typo",
+                                 "cmd:file section=verse target=elsewhere", "cmd:keep bad=value",
+                                 "cmd:file section=verse section=chorus", "cmd:keep target="])
+def test_command_truth_invalid_grammar(text: str) -> None:
+    """Return None after checking malformed command truth fails with ValueError."""
+    with pytest.raises(ValueError):
+        parse_command_truth(text)
+
+
+def test_unclear_frame_exclusions_preserve_gaps_and_count_predictions() -> None:
+    """Return None after checking excluded midpoints never enter accuracy or per-class counts."""
+    predicted = [(0.0, 1.0, "music"), (1.0, 2.0, "speech"), (2.0, 3.2, "silence")]
+    truth = [(0.0, 1.0, "music")]
+    result = frame_accuracy(predicted, truth, 0.5, exclude_intervals=[(1.0, 2.0), (3.0, 3.2)])
+    assert result["overall_accuracy"] == 1.0 and result["scored_frames"] == 4
+    assert result["excluded_predictions"] == {"music": 0, "speech": 2, "silence": 1}
+    assert result["per_class"]["silence"] == {"precision": 1.0, "recall": 1.0}
+    assert sum(map(sum, (row.values() for row in result["confusion_matrix"].values()))) == 4
+
+
+def test_all_frames_may_be_unclear() -> None:
+    """Return None after checking a wholly excluded memo has no scored frames or division errors."""
+    result = frame_accuracy([(0.0, 1.0, "music")], [], 0.5, exclude_intervals=[(0.0, 1.0)])
+    assert result["overall_accuracy"] == 0.0 and result["scored_frames"] == 0
+    assert result["excluded_predictions"]["music"] == 2
 
 
 def test_read_labels_including_point(tmp_path: Path) -> None:

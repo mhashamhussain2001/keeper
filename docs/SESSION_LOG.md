@@ -256,3 +256,75 @@
   13.10 seconds on Python 3.11.9, with the three existing `audioread` deprecation
   warnings (`aifc`, `audioop`, `sunau`). `git diff --check` passed. Preserved all
   earlier working-tree changes.
+
+## 2026-10-31 - Memo 2 oracle evaluation
+
+- Read `AGENTS.md`. The local second memo was named `data/test_2.wav` with
+  `data/test_2_labels.txt`; copied these to the requested `data/memo2.wav` and
+  `data/memo2_labels.txt`, preserving the originals. Fixed line 2 from ISNT to
+  INST, then appended the nine provided command truth intervals and five take
+  truth intervals before evaluation. All data and generated audio stay ignored.
+- Added case-insensitive SING, INST, SPEECH, and UNCLEAR aliases in the Audacity
+  reader. Singing/instrument aliases retain the existing collapse to music for
+  three-class evaluation. Added `parse_command_truth`, parsing file/keep/reject/
+  none, optional section/target, and notes consuming the rest of the line.
+- Added `scripts/eval_memo.py <name>`. It reuses an existing score CSV without
+  loading AST, or generates and caches scores once if absent. A no-export pass
+  through the unchanged pipeline supplies predicted speech regions. Oracle
+  commands attach by greatest positive overlap; absent overlap is a missed
+  command. Collisions retain the latest chronological truth command and audit
+  superseded commands. A second cached pass exports clips with oracle labels.
+  file uses its section (unsorted if absent); keep uses unsorted; reject/none
+  map to noncommands. target=next retains previous-take behavior and is reported
+  as known unsupported. Pipeline logic and thresholds are unchanged.
+- Extended frame evaluation with optional midpoint-based exclusions. Memo
+  evaluation excludes UNCLEAR intervals from three-class accuracy/precision/
+  recall and counts their predicted classes separately. All gaps count as
+  silence. Primary positive take hits require the matching section and at least
+  50% truth-duration coverage; rejected takes are checked separately for any
+  surviving overlap, including unlabeled output. Every unlabeled take is an
+  unscored extra. Existing section-agnostic boundary metrics are secondary.
+- Added offline tests for aliases, grammar, exclusions, oracle assignment,
+  collisions, misses, rejected/unlabeled outputs, 50% section matching, actual
+  clip export, and cache generation/reuse. Full suite: **121 passed** in 25.98 s,
+  with the three existing audioread deprecation warnings. After clarifying the
+  optional-argument grammar, the focused suites passed **50 tests** in 21.31 s.
+- No `outputs/memo2_scores.csv` existed initially. Started its one-time generation
+  with the existing `scripts/score_windows.py`, cached AST model, and unchanged
+  numpy fallback. Set OMP_NUM_THREADS and MKL_NUM_THREADS to 4 for this scoring
+  process only; no model, classification, or cutting settings were changed.
+- Completed fresh scoring: **753 windows**, approximately **47 min 46 s** wall
+  time (observed process start 01:20:47 to cache completion 02:08:33 local time).
+  The expected all-zero mel-filter warning appeared. Cache SHA-256:
+  `EFFC91F24B4A8BF53265F8720FF53200A883F868E7A27D9BADBA4AD68B546D77`.
+- Ran `.\.venv\Scripts\python.exe scripts/eval_memo.py memo2` successfully.
+  It reused the completed cache without rescoring; cached evaluation took
+  **8.07 s** for the two passes. Memo duration **376.4426875 s**. Exported
+  **10 nonempty WAV clips**: verse 1, chorus 2, unsorted 1, bridge 1, unlabeled 5.
+  Saved `outputs/memo2_eval/report.md`, song map, regions, scores, oracle labels,
+  attachment audit, warnings, and clips. These generated outputs remain ignored.
+- Primary frame accuracy: **622/680 = 0.914706**. Excluded **73 UNCLEAR frames**,
+  all predicted music. Class recall / precision: music **0.998012 / 0.901257**;
+  speech **0.793103 / 0.884615**; silence **0.655405 / 1.000000**. Confusion
+  matrix in music/speech/silence order (truth rows, prediction columns):
+  `[502, 1, 0]`, `[6, 23, 0]`, `[49, 2, 97]`.
+- Oracle command detection: **7/9** commands overlapped predicted speech,
+  **7 applied**, **2 missed**, **0 superseded**. Misses: cmd:reject at
+  97.606333-97.860293 s, and cmd:file section=chorus note=that last one at
+  120.669939-122.586183 s. Both bridge target=next commands attached but remain
+  known unsupported label-before-take cases. Pipeline warned that the command
+  at 288.5 s had no preceding music.
+- Primary positive take hits: **2/4**. Verse 21.95-37.74 s and chorus
+  348.67-372.73 s hit with 100% truth coverage in the matching section.
+  Chorus 114.87-120.11 s and bridge 294.84-305.10 s missed. The rejected truth
+  take 92.32-97.31 s was still produced as unlabeled-take-1 with 100% coverage.
+- Unlabeled extras (unscored): take 1 **91.7-98.5 s**, take 2 **103.7-123.0 s**,
+  take 3 **130.2-150.5 s**, take 4 **155.7-198.0 s**, take 5 **290.7-306.0 s**.
+- Secondary section-agnostic boundary metrics: **5 matches, 0 misses, 5 extras**.
+  Absolute start/end errors, in truth order: verse **20.25/1.26 s**;
+  rejected **0.62/1.19 s**; first chorus **11.17/2.89 s**;
+  bridge **4.14/0.90 s**; final chorus **38.67/0.77 s**.
+- `git diff --check` passed and `git diff -- keeper/` is empty. Added no
+  dependencies, changed no pipeline logic or thresholds, and performed no
+  tuning based on these results. The complete generated report is pasted
+  in the task reply and retained in `outputs/memo2_eval/report.md`.

@@ -49,8 +49,9 @@ def frame_accuracy(
     pred_regions: list[Region] | list[tuple[float, float, str]],
     gt_regions: list[Region] | list[tuple[float, float, str]],
     hop_s: float,
+    exclude_intervals: list[tuple[float, float]] | None = None,
 ) -> dict:
-    """Return frame metrics over the prediction duration, treating truth gaps as silence."""
+    """Return frame metrics with silence in truth gaps and optional midpoint-based exclusions."""
     if not isfinite(hop_s) or hop_s <= 0:
         raise ValueError("hop_s must be positive and finite")
     predicted = _activity_regions(pred_regions)
@@ -59,11 +60,22 @@ def frame_accuracy(
     truth_end = truth[-1].end if truth else 0.0
     if truth_end > duration and not isclose(truth_end, duration):
         raise ValueError("Ground-truth activity exceeds the predicted memo duration; check durations")
+    excluded = exclude_intervals or []
+    if any(not isfinite(start) or not isfinite(end) or not 0 <= start < end <= duration
+           for start, end in excluded):
+        raise ValueError("Excluded intervals must have finite 0 <= start < end <= duration")
     matrix = {actual: {guess: 0 for guess in FRAME_KINDS} for actual in FRAME_KINDS}
     frame_count = ceil(duration / hop_s)
+    scored_frames = 0
+    excluded_predictions = dict.fromkeys(FRAME_KINDS, 0)
     for index in range(frame_count):
         midpoint = (index * hop_s + min((index + 1) * hop_s, duration)) / 2
-        matrix[_label_at(truth, midpoint)][_label_at(predicted, midpoint)] += 1
+        guess = _label_at(predicted, midpoint)
+        if any(start <= midpoint < end for start, end in excluded):
+            excluded_predictions[guess] += 1
+            continue
+        scored_frames += 1
+        matrix[_label_at(truth, midpoint)][guess] += 1
     per_class = {}
     for kind in FRAME_KINDS:
         true_positive = matrix[kind][kind]
@@ -74,9 +86,11 @@ def frame_accuracy(
             "recall": true_positive / actual_count if actual_count else 0.0,
         }
     return {
-        "overall_accuracy": sum(matrix[kind][kind] for kind in FRAME_KINDS) / frame_count if frame_count else 0.0,
+        "overall_accuracy": sum(matrix[kind][kind] for kind in FRAME_KINDS) / scored_frames if scored_frames else 0.0,
         "per_class": per_class,
         "confusion_matrix": matrix,
+        "scored_frames": scored_frames,
+        "excluded_predictions": excluded_predictions,
     }
 
 
