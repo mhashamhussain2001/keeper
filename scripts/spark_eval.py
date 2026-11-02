@@ -100,7 +100,7 @@ def evaluate_spark(name: str, root: Path = ROOT) -> str:
     duration = float(json.loads((fixture / "meta.json").read_text())["duration_s"]) if name == "memo1" else None
     results = {}
     report = [f"# {name} Spark vs oracle", "", "edge_trim=True; fixed thresholds. Oracle and Spark both use cached AST scores. "
-              "Memo1 uses its declared fixture duration with real audio cropped to that duration. target=next attaches to previous with a warning. "
+              "Memo1 uses its declared fixture duration with real audio cropped to that duration. Direction and scope use the current KeeperConfig cut flags. "
               "No-command speech is truth none; unmatched memo1 speech overlapping 19-21 s is truth noise. "
               "A region overlapping command truth keeps command priority even if it also includes chair noise.", ""]
     with patch.object(pipeline, "ASTScorer", side_effect=AssertionError("Never rescore AST")):

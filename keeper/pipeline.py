@@ -3,6 +3,7 @@
 import argparse
 import json
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from collections.abc import Callable
 from math import ceil
 from pathlib import Path
@@ -44,7 +45,7 @@ def run_pipeline(
     destination = Path(out_dir).resolve()
     if destination == source.parent:
         raise ValueError("Output directory must differ from the source file's folder")
-    artifact_paths = {destination / name for name in ("songmap.json", "regions.json", "window_scores.csv", "warnings.txt")}
+    artifact_paths = {destination / name for name in ("songmap.json", "regions.json", "window_scores.csv", "window_scores.tmp", "warnings.txt")}
     if source in artifact_paths:
         raise ValueError("Output artifacts cannot overwrite the source file")
     if rms_json is not None:
@@ -65,7 +66,7 @@ def run_pipeline(
         # Mock parsing uses timestamps only; no synthetic substitute audio is needed.
         y = np.empty(0, dtype=np.float32)
     else:
-        y = load_audio(source, config.sample_rate)
+        y = load_audio(source, config.sample_rate, use_ffmpeg=config.fast_audio_loading)
         if duration_s is not None:
             if not np.isfinite(duration_s) or not 0 <= duration_s <= len(y) / config.sample_rate:
                 raise ValueError("duration_s must fit the source audio")
@@ -93,6 +94,11 @@ def run_pipeline(
             group: float((overlapping[group] * weights).sum() / weights.sum()) for group in (*SCORE_GROUPS, "music")
         }
     speech = [region for region in regions if region.kind == "speech"]
+    # Keep completed scoring work even if the downstream command service fails.
+    destination.mkdir(parents=True, exist_ok=True)
+    score_checkpoint = destination / "window_scores.tmp"
+    scores.to_csv(score_checkpoint, index=False)
+    score_checkpoint.replace(destination / "window_scores.csv")
     if progress is not None:
         progress("reading commands (Spark)" if isinstance(parser, MuseSparkLabelParser) else "reading commands (mock)")
     padding = getattr(parser, "audio_padding_s", 0.0)
@@ -100,12 +106,18 @@ def run_pipeline(
                  round(min(duration, region.end + padding) * config.sample_rate)].copy(), config.sample_rate, region)
              for region in speech]
     if isinstance(parser, MuseSparkLabelParser):
+        parser.configure_prompt(config.spark_prompt_v2)
         parser.preflight(clips)
-    commands = {region.start: parser.parse(audio, sr, region) for audio, sr, region in clips}
+    if isinstance(parser, MuseSparkLabelParser) and config.parallel_spark:
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            futures = [pool.submit(parser.parse, audio, sr, region) for audio, sr, region in clips]
+            commands = {region.start: future.result() for (_, _, region), future in zip(clips, futures)}
+    else:
+        commands = {region.start: parser.parse(audio, sr, region) for audio, sr, region in clips}
     parser_warnings = []
     for region in speech:
         label = commands[region.start]
-        if label.target == "next":
+        if label.target == "next" and not config.support_target_next:
             parser_warnings.append(f"label-before-take not supported: {label.heard or ''}")
         if label.intent in ("performance", "noise"):
             region.kind = "music" if label.intent == "performance" else "silence"
@@ -130,7 +142,6 @@ def run_pipeline(
         json.dumps({"silence_gate_db": gate, "regions": [region.to_dict() for region in regions]},
                    indent=2, allow_nan=False), encoding="utf-8",
     )
-    scores.to_csv(destination / "window_scores.csv", index=False)
     (destination / "warnings.txt").write_text("".join(f"{warning}\n" for warning in warnings), encoding="utf-8")
     return songmap, regions, warnings
 
@@ -150,7 +161,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.parser == "mock" and args.mock_labels is None:
         cli.error("--mock-labels is required with --parser mock")
     parser = (MockLabelParser(args.mock_labels) if args.parser == "mock" else
-              MuseSparkLabelParser(args.out / "spark_cache.json", KeeperConfig().max_spark_calls))
+              MuseSparkLabelParser(args.out / "spark_cache.json", KeeperConfig().max_spark_calls,
+                                   prompt_v2=KeeperConfig().spark_prompt_v2))
     songmap, regions, warnings = run_pipeline(
         args.audio_path, parser, args.out, scores_csv=args.scores_csv,
         rms_json=args.rms_json, no_export=args.no_export, duration_s=args.duration_s,

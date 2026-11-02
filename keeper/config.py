@@ -46,6 +46,12 @@ class KeeperConfig:
     edge_trim: bool = True
     trim_singing_min: float = 0.0018
     max_spark_calls: int = 40
+    spark_prompt_v2: bool = True
+    parallel_spark: bool = True
+    fast_audio_loading: bool = False
+    support_target_next: bool = True
+    support_last_attempt: bool = True
+    attempt_gap_s: float = 0.5
     min_unlabeled_s: float = 3.0
     mode_filter_frames: int = 3
     min_region_s: dict[str, float] = field(default_factory=_default_min_region_s)
@@ -62,6 +68,8 @@ class KeeperConfig:
             raise ValueError("max_spark_calls must be a nonnegative integer")
         if any(not isfinite(value) or value <= 0 for value in (self.win_s, self.hop_s)):
             raise ValueError("win_s and hop_s must be positive and finite")
+        if not isfinite(self.attempt_gap_s) or self.attempt_gap_s <= 0:
+            raise ValueError("attempt_gap_s must be positive and finite")
         if not isfinite(self.protect_speech_run_s) or self.protect_speech_run_s <= 0:
             raise ValueError("protect_speech_run_s must be positive and finite")
         if not isfinite(self.trim_singing_min) or not 0 <= self.trim_singing_min <= 1:

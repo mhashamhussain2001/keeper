@@ -654,6 +654,248 @@
   Modal dependency left out of application requirements; UTF-8 CLI on Windows.
   No thresholds/defaults, audio, fixture scores, secrets, or commits changed.
 
+## 2026-10-31 - Modal deployment resumed after billing setup
+
+- User reported billing ready. Read AGENTS.md and resumed from committed
+  deployment work (`135c837`). Deployed successfully using
+  `.\.venv\Scripts\python.exe -X utf8 -m modal deploy modal_app.py`:
+  **https://mhashamhussain2001--keeper-web.us-east.modal.run**.
+  Deployment dashboard:
+  https://modal.com/apps/mhashamhussain2001/main/deployed/keeper.
+- Initial seed job `memo2-20261101043943832130` accepted data/memo2.wav
+  (376.442687 s, 16 kHz mono) with upload/validation wall time **37.937 s**.
+  Status history measured queue **14.761630 s**, loading **29.364922 s**,
+  AST scoring **76.500184 s**, then Spark **5.605399 s** before failing
+  with **Error code: 401**. GPU reported **Tesla T4**, parser **spark**.
+  Poll observed failure at **166.3 s**; this is a failed-run timing, not a
+  completed end-to-end result. Cut/export never ran. Homepage returned 200;
+  /api/memos returned [] and correctly hid the failed memo. Preserved
+  status in outputs/modal_seed_failed_status.json. No secrets were inspected.
+- Asked user to update BASETEN_API_KEY in the existing Modal secret baseten;
+  user replied ready. Kept Spark enabled and did not substitute oracle/mock
+  commands. Refreshed deployment and started a fresh seed upload.
+- The failure exposed that scores were only saved at pipeline completion.
+  Moved the existing CSV write before command parsing and made it atomic,
+  retaining completed scoring work if Spark fails. Temporary checkpoint is
+  covered by the existing source-file overwrite guard. Future manual retries
+  can reuse that memo's cache; the initial failed run predates this fix and
+  did not retain its GPU CSV. No classification/cutting rules changed.
+- Seeder now also saves timestamped failed-run reports before raising,
+  preserving timing evidence without treating failures as success. Added
+  offline regression tests for checkpoint retention/no-rescore recovery
+  after a command error and failed seed-report persistence.
+- Full suite after these changes: **182 passed, 1 skipped**, five warnings,
+  in **17.68 s**. CUDA test skipped on the local CPU; the unchanged real-memo
+  test passes. No KeeperConfig defaults, requirements, thresholds, truth,
+  audio, or fixture scores changed. git diff --check passes.
+- Score-checkpoint revision deployed successfully (image
+  `im-Gl2Kkn5Y6ChVjQKvv7aFU4`). Modal API differences remain none; Windows
+  CLI still requires -X utf8. New decisions beyond the prompt: persist score
+  checkpoints before the external parser and retain failed seed reports.
+- **Completed successfully after the secret update.** Fresh memo ID:
+  `memo2-20261101044630650654`. Seeder returned done/listed=true using Spark
+  on **Tesla T4**. For the **376.442687 s** recording, measured end-to-end
+  wall time was **203.702758 s** (3 min 23.70 s, about 0.54 times track length).
+  Measured successful-run split:
+
+  | Stage | Seconds |
+  | --- | --- |
+  | Upload and validation (client wall clock) | 25.483704 |
+  | Queued / GPU startup | 25.948684 |
+  | Loading audio | 30.469406 |
+  | AST scoring | 71.285980 |
+  | Spark commands | 42.159334 |
+  | Cutting takes | 1.564800 |
+  | Exporting clips | 1.582615 |
+  | End-to-end, including HTTP/polling/list verification | 203.702758 |
+
+  Processing-stage durations use adjacent status-history UTC timestamps;
+  upload and total use the client's monotonic clock, including HTTP overhead.
+  The successful seed made **7 Spark calls, 6,831 tokens, zero retries,
+  zero failed regions**. The earlier unauthorized call is not included in
+  successful-run totals. No secret contents were read or printed.
+- Verified the public `/api/memos` returns exactly the successful memo ID;
+  its status is done, songmap parser is spark, duration matches source audio,
+  and it contains **9 takes**: verse 1, chorus 2, unsorted/Ideas 1, unlabeled 5.
+  Four takes retain heard text. All takes have clip URLs; fetched one real
+  commanded clip and verified HTTP 200, 16 kHz, mono, PCM-16 WAV. The earlier
+  failed memo remains retained for diagnosis and absent from the picker.
+- Downloaded the successful job's checkpointed GPU CSV and compared against
+  unchanged outputs/memo2_scores.csv (no local AST inference). All **753
+  windows / 23 columns** align, timestamps match exactly, and maximum absolute
+  difference over all values is **1.996755599975586e-6**, passing the requested
+  **1e-4** bound on real T4 results. Group mean/max absolute differences:
+  singing **3.89522884e-8 / 5.51342964e-7**; speech
+  **1.42003812e-7 / 1.57952309e-6**; instrument
+  **2.84010406e-7 / 1.63912773e-6**. Local CUDA pytest still skips, but this
+  independent full-recording GPU/CPU check passed.
+- Preserved ignored evidence: outputs/modal_seed_report.json,
+  modal_live_verification.json, modal_gpu_score_comparison.json,
+  modal_spark_audit_summary.json, memo2_modal_scores.csv, and the Spark response
+  audit. Original memo2 score SHA-256 remains
+  `EFFC91F24B4A8BF53265F8720FF53200A883F868E7A27D9BADBA4AD68B546D77`.
+  No thresholds/defaults, dependencies, audio, or fixture data changed; no
+  commits were made. Final test result remains **182 passed, 1 skipped**;
+  git diff --check passes. Deployment/seeding work is complete.
+
+## 2026-11-01 - Web playback, per-browser privacy, metadata, and waveform fixes
+
+- Read AGENTS.md. Applied the mobile-native skill for gesture/safe-area/input
+  behavior. Scope is web app, administrative tooling, and tests only: no new
+  keeper/ edits, pipeline rules, thresholds, defaults, AST rescoring, Spark
+  calls, or Python dependencies. Preserved the existing uncommitted deployment
+  checkpoint work, tests, README, and log entries from the preceding task.
+  keeper/pipeline.py SHA-256 remains
+  `262DA0305DA386520916F835818DA46C314F845C3202B3F7F0380778C9D8C75D`;
+  keeper/config.py remains
+  `531419D31BC4AF8F9AB25AD841BA958E46AC225643BCAB2D1A14BDF69E749BBD`.
+- Split browser code into static/app.js and static/audio.js. One AudioContext
+  is created lazily on a playback tap; resume() and a one-sample silent source
+  execute in that handler before any await/fetch/decode. Suspension/interruption
+  pauses the queue with its offset preserved; the next tap resumes the same
+  context. Added single-take HTML audio fallback using one gesture-primed
+  element and authenticated blob URLs. iOS hint appears on first playback per
+  page: "No sound? Check your iPhone's silent switch."
+- Added fixed safe-area transport: play/pause, stop, current take, queue elapsed/
+  total, and tappable seek. Web Audio sources restart at the seek/resume offset;
+  queue scheduling is continuous and identifies the current take. Take buttons
+  show Pause for the currently playing take and pause/resume its active queue.
+  Seek is disabled until decoding completes. Generation checks stop stale fetch
+  completion from starting audio after stop or a memo switch.
+- Browser owner token prefers crypto.randomUUID and persists in localStorage,
+  guarded by try/catch; storage-blocked mode uses a page-lifetime token and a
+  visible warning. Older/insecure local contexts fall back to crypto.getRandomValues
+  for a UUID, never Math.random. Every browser API call, including clip fetches,
+  sends X-Keeper-Owner. Server canonicalizes UUIDs, excludes owner values from
+  responses, and adds private/no-store plus Vary: X-Keeper-Owner.
+- Added app/metadata.py with atomic meta.json, ownership checks, and idempotent
+  legacy migration. New memo IDs are random 32-character UUID hex strings.
+  Stored fields: title, original_filename, created_at, owner, showcase. Browser
+  posts its local-time default title; server/non-browser fallback is UTC.
+  Titles accept 1-120 non-control characters. Catalog returns metadata objects,
+  owned completed memos newest first, followed by showcases. Picker text contains
+  only titles; opens newest owned memo or first showcase. Detail/status/clips and
+  mutations conceal inaccessible IDs with 404. Ownerless does not mean anonymous
+  ownership. Uploads without a valid token return 400.
+- Added owner-only PATCH rename and DELETE, inline title editing, and in-page
+  deletion confirmation. Rename cannot modify owner/showcase. Delete removes the
+  memo folder plus only its matching original upload, with resolved containment
+  checks immediately before recursive deletion. Running/queued jobs return 409
+  to prevent a worker recreating deleted data; UI deletion targets loaded completed
+  memos. No browser confirm() is used.
+- Added authenticated Modal manage_memos function for migration/showcase, with
+  no public HTTP mutation endpoint and no Baseten secret. scripts/set_showcase.py
+  <url> <memo_id> on|off verifies the URL against the active Modal workspace's
+  keeper/web function before invoking administration. Transient administration
+  uses one CPU, 4096 MiB, max one container, min zero, 2 s idle, 600 s timeout.
+  Existing web/GPU caps remain unchanged. CLI seed client now sends an owner
+  UUID and understands catalog objects; its token is scoped to that seed process.
+- Added app/waveform.py: exactly 800 absolute-peak bins, clamped to [0,1], spanning
+  the memo. Empty bins are zero. Web processing saves peaks.json during loading;
+  this is separate display work and does not modify scoring/cutting. Migration
+  backfills peaks from saved uploads without AST or Spark. Detail returns peaks;
+  absent legacy audio falls back to a flat waveform. Default timeline contains
+  quiet peaks plus labeled take blocks. Show detail adds activity regions; regions
+  shorter than 1.5 s merge into the longer adjacent region for display, ties to
+  previous, with adjacent identical kinds combined. Original region data is intact.
+- Added "Processed in Xm Ys" below title with expandable per-stage durations
+  from status history. Timing spans queued through done (includes GPU startup,
+  excludes upload validation); legacy memos without history show unavailable.
+  Styling changes stay limited to functional controls, fixed bar/safe-area padding,
+  16 px inputs, gated hover, and reused waveform/take colors; no visual redesign.
+- Full suite `.\.venv\Scripts\python.exe -m pytest`: **195 passed, 1 skipped**
+  in **11.03 s**, with the five existing/intentional decoder warnings. Includes
+  owner filtering, all private-route 404s, anonymous owner=null denial, public
+  showcase reads/private edits, rename validation, deletion/source cleanup,
+  active-job deletion guard, upload metadata, ordering, migration preservation/
+  idempotence, and 800 peaks. The full suite also runs **10 Node built-in tests**
+  for synchronous unlock ordering, one context, pause/seek offsets, contiguous
+  queues/current take, interruptions, HTML fallback, stale loads, owner headers,
+  title-only defaults, storage blocking, timing, smoothing, and loading seek state.
+  No npm packages; README documents Node 18+ for frontend tests. Local CUDA test
+  skips; unchanged real-memo test passes. JavaScript syntax and git diff --check pass.
+- Redeployed with `.\.venv\Scripts\python.exe -X utf8 -m modal deploy
+  modal_app.py`. Final image `im-DvLfMCI3DADtgwv5ARXICZ`; public URL remains
+  **https://mhashamhussain2001--keeper-web.us-east.modal.run**.
+- Ran authenticated volume migration: **3 existing memo folders** received
+  owner=null/showcase=false metadata and waveform peaks; nothing was deleted.
+  Existing IDs stay unchanged to preserve references; migrated titles use the
+  first status timestamp (or file modification time) in UTC, and original filename
+  uses the best previously stored value. Existing metadata is never overwritten.
+  A second live migration returned no changes, proving idempotence.
+- Explicitly ran set_showcase.py with memo2-20261101044630650654 off. Verified
+  its downloaded metadata has owner null/showcase false and peaks.json contains
+  **800** peaks covering **376.4426875 s**. No current showcase is published.
+  Live unrelated-browser checks: /api/memos returns [] with private/no-store;
+  memo2 detail, status, and clip return 404. Homepage, app.js, and audio.js return
+  200. Evidence saved under ignored outputs/web_privacy_live_checks.json and
+  migration artifact copies. No real user memo was deleted for verification.
+- Decisions beyond the spec: explicit UUID validation/no-store responses; page-
+  lifetime fallback if storage is blocked; random IDs only for new memos; UTC/best-
+  available metadata for old memos; owner-only edits even on public showcases;
+  admin-only publication bound to the supplied deployment URL; 409 while active;
+  matching original upload removed on delete; raw bounded peaks with empty-bin
+  zeros; deterministic visual-only merge rule; queued-to-done timing; 2.5 s audio
+  resume timeout and 40 ms queue scheduling lead; another Play tap may be needed
+  for Safari's prepared HTML fallback; multi-take fallback is not emulated; hint
+  once per page, iOS detection only for that hint; Node built-in tests; retained
+  existing section ordering and application palette. No accounts or implicit
+  claim/recovery of migrated recordings. Operational behavior is documented in README.
+- Real iPhone silent-switch, interruption, and safe-area behavior cannot be
+  hardware-verified in this environment. Automated audio/UI and live server
+  checks passed; physical iPhone listening remains the device-specific check.
+  No secrets, audio, outputs, or commits were added to Git.
+
+## 2026-11-01 - iPhone silent-switch playback session
+
+- Read AGENTS.md and private/prompts/codex_prompt_ios_silent.md. Runtime edits
+  are confined to app/static/index.html; existing app.js, audio.js, backend,
+  pipeline, privacy, thresholds, and preceding uncommitted work are preserved.
+- Added an inline playback-session hook between audio.js and app.js. These
+  bottom-of-body scripts now load in order, so the hook is installed before
+  the UI starts. It wraps the existing synchronous unlock handler, setting
+  navigator.audioSession.type="playback" before AudioContext.resume or fetch.
+  Missing, rejected, or ignored AudioSession support selects the fallback.
+- Fallback creates one reusable playsinline audio element with loop=true,
+  volume=1, muted=false. Its data URI encodes a genuinely silent 100 ms,
+  mono 16 kHz PCM-16 WAV (all 3200 payload bytes zero); it does not simulate
+  silence by muting or setting volume to zero. play() runs in the same tap
+  handler. Loop pauses on pause, stop, finish, errors, and memo changes;
+  next play restarts it. Guarded start()'s internal source-stop so loading
+  or seeking does not prematurely pause the loop. Attempt generation ignores
+  stale play-promise completions after a stop.
+- Retained the existing silent-switch hint only when neither playback-session
+  route is available; suppressed it while a method is pending or successful.
+  The prior iOS-only first-play hint behavior otherwise remains unchanged.
+- Added tests/ios_silent.cjs to the existing pytest-driven Node runner. Four
+  new offline checks cover synchronous AudioSession assignment before resume/
+  fetch, normal-volume looping WAV validity and zero payload, loop survival
+  during loading plus stop/restart/pause/finish, a throwing AudioSession setter,
+  and the both-methods-unavailable hint condition. Existing transport/UI
+  regression checks continue passing: **14 Node checks** total.
+- Full `.\.venv\Scripts\python.exe -m pytest`: **195 passed, 1 skipped**
+  in **25.63 s**, five existing/intentional decoder warnings. The skipped test
+  requires local CUDA. git diff --check passed. No new dependencies.
+- Redeployed with `.\.venv\Scripts\python.exe -X utf8 -m modal deploy
+  modal_app.py` in **36.760 s**, image `im-1zEr01rgq3eJhwq2RXKxnL`.
+  Public URL: **https://mhashamhussain2001--keeper-web.us-east.modal.run**.
+  Live HTTP 200 check confirmed AudioSession playback assignment, the unmuted
+  volume-1 loop, and the hook loading before app.js. This check verifies the
+  delivered source; actual silent-switch audio requires a real iPhone test.
+- Scope evidence: audio.js remains SHA-256
+  `9715DD306184251ED1E3877C6312C63F66F7FBFBCE6D56537C56CBFE78ED610B`;
+  app.js remains `3ABE4743EEFDAF3A00A8473909591636FF2D486CE844A9F7BB1CEAD871BACBB5`.
+  Pipeline/config hashes remain unchanged from the preceding entry. No memo
+  data, recordings, secrets, owner metadata, or commits were changed.
+- Final lifecycle refinement ties cleanup to the final Web Audio source's
+  onended event as well as transport state. The silent loop therefore stops
+  on natural completion even if background animation frames are throttled.
+  Extended the fallback regression to fire source.onended without any RAF.
+  Re-ran the full suite: **195 passed, 1 skipped**, five warnings, **16.26 s**.
+  Final deployment: **42.043 s**, image `im-FGXJfqdbPfV7T0yBpSNu0G`, same
+  public URL. Live HTTP 200 source check confirms the final end-event cleanup
+  and both playback-session paths. Physical iPhone validation remains pending.
+
 ## 2026-11-01 - Learned frame classifier experiment with whole-memo holdouts
 
 - Read AGENTS.md and private/prompts/codex_prompt_learned_frames.md.
@@ -744,3 +986,184 @@
   cached scores, deployment, or secret changes. Preserved all earlier
   uncommitted work; no commits made. Pipeline/config hashes remain the same
   as the preceding entries. This remains an experiment only.
+
+
+## 2026-11-01 — Logic v2: directional commands, last attempt, parallel Spark, and Modal timing
+
+- Read AGENTS.md and private/prompts/codex_prompt_logic_v2.md. Satisfied the
+  prerequisite with focused commit `d6acd17` (learned-frame experiment script,
+  its tests, installed scikit-learn pin, and only its session-log entry).
+  Preserved all unrelated existing uncommitted work. Logic-v2 changes remain
+  in the working tree; no audio, data/, .env, or credentials were committed.
+- Added `CommandLabel.scope`, default `whole`; strict Spark validation accepts
+  `whole` / `last_attempt` and defaults omitted scope to whole. Prompt v2 is
+  `v2-4db135a8d10b336a`; old cache entries are retained but new keys invalidate
+  them for v2. Model, reasoning effort, audio padding, and thresholds unchanged.
+  `spark_prompt_v2=True` controls the prompt; false selects the previous prompt.
+- `support_target_next=True` walks forward, allows silence shorter than the
+  existing max_gap_s, stops at any next speech/long silence/memo end, and clamps
+  rolls within the command-end/stop bounds. Removes the unsupported warning
+  when enabled. Forward-claimed music cannot be claimed again by a later
+  backward command; that command gets a collision warning and no take.
+- `support_last_attempt=True`, `attempt_gap_s=0.5`: select music after the last
+  qualifying internal silence in either collection direction. No pause retains
+  the whole take and emits exactly `last attempt requested but no pause found`.
+  Existing edge trim runs afterwards. Earlier unclaimed music remains eligible
+  for existing unlabeled-take handling rather than deleting source material.
+- `parallel_spark=True`: at most four workers; timestamp order is retained in
+  pipeline command application. Per-key locks share duplicate in-flight work;
+  a shared reentrant lock protects cache access, atomic writes, client creation,
+  and call reservations. `spark_cache.calls.json` persists the cumulative count
+  before each invocation, including compatibility retries and interrupted calls.
+  Guard remains 40 calls per memo across prompt versions and reruns. This is
+  thread safety within one parser, not a cross-process distributed cache lock.
+- Added scripts/ablate_logic_v2.py. Both cut flags off defines v1; both on
+  defines v2, using identical prompt-v2 responses and parallel parsing in both.
+  Thus the comparison isolates cutting rather than confounding prompt changes.
+  All evaluation AST scores came from the existing CSVs, whose SHA-256 hashes
+  were checked unchanged. AST construction is blocked during these runs.
+  Memo1 uses real data/test.wav cropped to the fixture's declared 28.28 s;
+  the numeric fixture, boundaries, and thresholds were not edited. Edge trim
+  stays on. Reports, clips, first-run audit, and rerun audit are under
+  outputs/<memo>/logic_v2/. Section-agnostic S/E matching can match unlabeled
+  output; only the separate positive-hit metric requires the correct section
+  and >=50% truth overlap. Rejected takes are excluded from positive-hit totals.
+
+## memo1
+
+| Setting | Frame accuracy | Recall music | Recall speech | Recall silence | Commands detected | Positive take hits | chorus A 0.00-8.00 S/E error | chorus B 10.52-20.64 S/E error | chorus C 23.05-26.85 S/E error |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| v1, protect off | 0.859649 | 1.000000 | 1.000000 | 0.555556 | 3/3 | 3/3 | 0.000/0.000 | 0.320/0.360 | 0.350/0.150 |
+| v2, protect off | 0.859649 | 1.000000 | 1.000000 | 0.555556 | 3/3 | 3/3 | 0.000/0.000 | 0.320/0.360 | 0.350/0.150 |
+| v1, protect on | 0.824561 | 0.968750 | 1.000000 | 0.500000 | 3/3 | 3/3 | 0.000/0.000 | 0.320/1.140 | 0.350/0.150 |
+| v2, protect on | 0.824561 | 0.968750 | 1.000000 | 0.500000 | 3/3 | 3/3 | 0.000/0.000 | 0.320/1.140 | 0.350/0.150 |
+
+## memo2
+
+| Setting | Frame accuracy | Recall music | Recall speech | Recall silence | Commands detected | Positive take hits | verse 21.95-37.74 S/E error | rejected 92.32-97.31 S/E error | chorus 114.87-120.11 S/E error | bridge 294.84-305.10 S/E error | chorus 348.67-372.73 S/E error |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| v1, protect off | 0.914706 | 0.998012 | 0.793103 | 0.655405 | 7/9 | 2/4 | 1.250/0.760 | 0.620/1.190 | 11.170/1.890 | 0.360/0.900 | 38.670/0.770 |
+| v2, protect off | 0.914706 | 0.998012 | 0.793103 | 0.655405 | 7/9 | 2/4 | 1.250/0.760 | 0.620/1.190 | 11.170/1.890 | 0.360/0.900 | 38.670/0.770 |
+| v1, protect on | 0.920588 | 0.998012 | 0.931034 | 0.655405 | 8/9 | 3/4 | 1.250/0.760 | 0.620/1.190 | 10.870/0.110 | 0.360/0.900 | 38.670/0.770 |
+| v2, protect on | 0.920588 | 0.998012 | 0.931034 | 0.655405 | 8/9 | 3/4 | 1.250/0.760 | 0.620/1.190 | 0.370/0.110 | 0.360/0.900 | 38.670/0.770 |
+
+- Memo1 has identical frame metrics and every boundary between v1/v2 for each
+  protection setting. Both cut flags therefore remain on by default.
+  protect_speech_runs remains False: enabling it still lowers memo1 frame
+  accuracy 0.859649 -> 0.824561 and worsens B end error 0.360 -> 1.140 s.
+- Memo2 bridge truth 294.84-305.10 is a matching-section MISS under all four
+  settings. An unlabeled take overlaps with secondary S/E error 0.360/0.900 s.
+  Spark marks the first bridge command (285-287) as next, but it must stop at
+  the second speech command (288.5-290). Spark incorrectly marks the second
+  command previous; it has no preceding music and cannot file the bridge.
+  Did not change the prompt or infer target from future audio to mask the miss.
+- Memo2 "that last one" chorus 114.87-120.11: with protection off it is a
+  matching-section MISS in both v1/v2 (secondary unlabeled S/E 11.170/1.890).
+  With protection on it is a HIT in both, improving from v1 104.0-120.0
+  (10.870/0.110 s error) to v2 114.5-120.0 (0.370/0.110 s error).
+- Intent accuracy: memo1 3/3 for all settings; memo2 protection off 7/9,
+  protection on 8/9. Memo2 scope accuracy off 7/9 (100% of 7 detected), on 8/9
+  (100% of 8 detected); target accuracy off 6/9 (6/7 detected), on 7/9 (7/8
+  detected). Missed truth commands count wrong. The 97.606-97.860 reject is
+  undetected throughout; the last-attempt command is undetected with protection
+  off. Truth scope is last_attempt only for the annotated "that last one"
+  command; all other truth commands are whole. No target means previous.
+- New prompt calls: memo1 4 calls / 3,960 tokens; memo2 9 calls / 8,159 tokens
+  (one invalid-fields retry; no refusals). Total evaluation: 13 calls / 12,119
+  tokens. Complete second evaluations made ZERO new calls/tokens: memo1 12
+  cache hits, memo2 30. First-run accounting retained separately because rerun
+  reports correctly show zero new usage.
+
+### Modal decoder experiment (T4, two CPUs)
+
+Cold = first decode in a fresh Python process, including lazy imports/JIT;
+warm = immediate repeat. Disk/page and on-disk JIT caches were not flushed.
+No AST scoring on memo2 was done for this experiment or the evaluations.
+
+| Input | Librosa cold / warm (s) | Direct ffmpeg cold / warm (s) |
+| --- | --- | --- |
+| memo2.wav | 18.845174 / 0.032837 | 0.221652 / 0.209810 |
+| test_2.m4a | 3.111607 / 0.583854 | 0.439377 / 0.430726 |
+| test.wav | 2.643784 / 0.041258 | 0.138465 / 0.138472 |
+
+Librosa cold startup explains much of the long loading stage; repeated WAV
+decoding is fast. Warm direct ffmpeg WAV decoding is slower than warm librosa.
+Decoder lengths matched for every input. Sample max-absolute/RMSE differences:
+memo2.wav 0/0; test_2.m4a 0.028103381/0.000487397;
+memo1 test.wav 0.399137020/0.073643363.
+
+Scored only memo1 through both decoders using the same cached AST model on T4
+(full 28.579125 s here; evaluation still uses the 28.28 s fixture duration).
+Max probability difference across all emitted score columns: **0.066790298**;
+group maxima: singing 0.066790298, speech 0.066336453, instrument 0.020855486.
+This FAILS the required <0.01 gate. Kept librosa; fast_audio_loading=False.
+The direct ffmpeg branch remains opt-in for diagnostic/ablation only. Did not
+special-case file formats or tune the decoder after seeing these scores.
+No new dependency: ffmpeg was already in the Modal image; all new concurrency,
+hashing, timing and locking tools are Python's standard library. Local ffmpeg
+is absent, and the unchanged local/default loader remains fully supported.
+Raw diagnostics: outputs/logic_v2_loader.json; remote private inputs/results
+under keeper-data:/benchmarks/logic_v2/. No benchmark files were made public.
+
+### Deployment and fresh upload
+
+`python -m modal deploy modal_app.py` through the required venv succeeded in
+51.624 s. Existing endpoint:
+https://mhashamhussain2001--keeper-web.us-east.modal.run
+
+Uploaded **data/test_2.m4a**, not memo2.wav, using scripts/time_upload.py.
+This is the expressly requested fresh upload and therefore runs AST on that
+new recording; it does not modify or regenerate either evaluation CSV.
+The memo remains private (showcase false), with a run-scoped owner token saved
+only in ignored outputs/logic_v2_upload/owner.json. Clip GET returned 200
+audio/wav and verified RIFF/WAVE bytes. Upload result detail and timestamps:
+outputs/logic_v2_upload/report.json. No UI, owner/privacy, or secret changes.
+
+Memo ID: `e08da42437724e4a9fd48bb07684faab`. Track length: **376.832 s** (6m 16.832s).
+
+| Stage | Seconds |
+| --- | --- |
+| Upload + validation HTTP request | 28.728553 |
+| queued | 9.796058 |
+| loading audio | 21.280498 |
+| scoring audio (AST) | 61.435414 |
+| reading commands (Spark) | 11.931459 |
+| cutting takes | 1.471329 |
+| exporting clips | 0.497090 |
+| Server queue -> done | 106.411848 |
+| End-to-end request -> verified result | 140.392479 |
+
+End-to-end includes HTTP overhead, status polling, and final detail retrieval;
+server stages come from consecutive status timestamps and include storage
+publication overhead. Validation is outside the server queued-to-done interval.
+GPU was Tesla T4; parser Spark. Fresh upload API usage: 8 calls,
+8,044 tokens, 0 retries. Total new Spark usage for this task:
+21 calls, 20,163 tokens including both evaluations and this fresh upload.
+
+### Validation and decisions
+
+- Full suite: `.venv\Scripts\python.exe -m pytest -q`: **213 passed, 1 skipped**
+  in 12.32 s; final repeat after report-helper edits also passed 213/1 in
+  18.78 s, five existing decoder warnings. The skip is local CUDA.
+  test_real_memo.py remains unchanged and passes its original accuracy and
+  boundary thresholds. Focused tests cover forward gaps/stops/roll clamps/end,
+  backward collision, both-direction last-attempt selection and no-pause
+  warning, disabled flags, scope default/enum/cache namespace, concurrent
+  equivalence/single-flight/cache integrity, retry budget races, persistent
+  budget after restart, diagnostic PCM decoding arguments, and the exact M4A
+  upload source. Offline network guards remain active.
+- All inspected new/edited functions have type hints and return docstrings.
+  git diff --check passed. README documents the new flags and failed loader
+  acceptance check. No existing numeric threshold, UI, or fixture changed.
+- Unspecified choices: use the same v2 prompt in both cut settings; count
+  missed commands as wrong in scope/target accuracy; truth scope inferred only
+  from the existing explicit last-attempt note; preserve discarded earlier
+  attempts as eligible unlabeled music; split at the end of the final internal
+  pause and clamp pre-roll there; long silence stops at its near edge;
+  chronological application of parallel results; per-parser thread locks
+  rather than cross-process locking; cumulative call ledger includes old
+  prompt entries; fresh-process cold timing does not flush shared caches;
+  compare all AST output probabilities, using full memo1 audio only for decoder
+  compatibility; retain diagnostic ffmpeg behind its disabled flag; leave
+  the fresh upload private, with its owner token stored outside the report.
+  No follow-up tuning was performed after observing results.

@@ -31,8 +31,22 @@ image = (
     .add_local_dir(ROOT / "app", "/root/app", copy=True, ignore=["**/__pycache__/**", "**/*.pyc"])
     .add_local_file(ROOT / "requirements.txt", "/root/requirements.txt", copy=True)
     .add_local_file(ROOT / "modal_app.py", "/root/modal_app.py", copy=True)
+    .add_local_file(ROOT / "scripts" / "benchmark_audio_loading.py", "/root/scripts/benchmark_audio_loading.py", copy=True)
     .run_function(download_ast, include_source=False)
 )
+
+
+@app.function(image=image, gpu="T4", cpu=2, memory=8192, timeout=1800,
+              volumes={"/data": volume}, include_source=False)
+def benchmark_audio() -> dict:
+    """Return private decoder measurements without changing deployed memos or their score caches."""
+    from scripts.benchmark_audio_loading import benchmark
+
+    volume.reload()
+    result = benchmark(Path("/data/benchmarks/logic_v2"))
+    volume.commit()
+    print(__import__("json").dumps(result, indent=2))
+    return result
 
 
 @app.function(image=image, gpu="T4", cpu=2, memory=8192, timeout=1800,
@@ -71,3 +85,36 @@ def web() -> object:
     server.reload_storage = volume.reload
     server.commit_storage = volume.commit
     return server.app
+
+
+@app.function(image=image, cpu=1, memory=4096, timeout=600, volumes={"/data": volume},
+              min_containers=0, max_containers=1, scaledown_window=2, include_source=False)
+def manage_memos(action: str, memo_id: str | None = None, enabled: bool = False) -> dict:
+    """Return an authenticated administrative migration or showcase update, without a public endpoint."""
+    import json
+    from app.metadata import migrate_memos, set_showcase
+    from app.storage import Settings, memo_directory
+    from app.waveform import write_peaks
+
+    volume.reload()
+    settings = Settings()
+    if action == "showcase" and memo_id is not None:
+        result = {"id": memo_id, **set_showcase(settings, memo_id, enabled)}
+    elif action == "migrate":
+        result = {"migrated": migrate_memos(settings), "waveforms": []}
+        for directory in settings.outputs_root.iterdir():
+            if not directory.is_dir():
+                continue
+            directory = memo_directory(settings, directory.name)
+            manifest = directory / "upload.json"
+            if manifest.exists() and not (directory / "peaks.json").exists():
+                source = (settings.uploads_root / json.loads(manifest.read_text())["filename"]).resolve()
+                if not source.is_relative_to(settings.uploads_root.resolve()):
+                    raise ValueError("Upload path escaped storage")
+                if source.is_file():
+                    write_peaks(source, directory)
+                    result["waveforms"].append(directory.name)
+    else:
+        raise ValueError("Unknown administration action")
+    volume.commit()
+    return result

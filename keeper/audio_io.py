@@ -2,19 +2,32 @@
 
 from math import ceil
 from pathlib import Path
+import subprocess
 
 import numpy as np
 
 from keeper.config import DB_AMPLITUDE_FACTOR, RMS_EPSILON, KeeperConfig
 
 
-def load_audio(path: str | Path, sr: int) -> np.ndarray:
+def load_audio(path: str | Path, sr: int, use_ffmpeg: bool | None = None,
+               max_duration_s: float | None = None) -> np.ndarray:
     """Return mono float32 audio resampled to the requested 16000 Hz rate."""
     if sr != KeeperConfig().sample_rate:
         raise ValueError("Keeper audio must use 16000 Hz")
+    fast = KeeperConfig().fast_audio_loading if use_ffmpeg is None else use_ffmpeg
+    if max_duration_s is not None and (not np.isfinite(max_duration_s) or max_duration_s <= 0):
+        raise ValueError("max_duration_s must be positive and finite")
+    if fast:
+        command = ["ffmpeg", "-nostdin", "-v", "error", "-i", str(path), "-vn", "-ac", "1", "-ar", str(sr)]
+        if max_duration_s is not None:
+            command += ["-t", str(max_duration_s)]
+        command += ["-f", "f32le", "pipe:1"]
+        result = subprocess.run(command, capture_output=True, check=True, timeout=120)
+        return np.frombuffer(result.stdout, dtype="<f4").astype(np.float32, copy=True)
     import librosa
 
-    audio, _ = librosa.load(str(path), sr=sr, mono=True, dtype=np.float32)
+    options = {} if max_duration_s is None else {"duration": max_duration_s}
+    audio, _ = librosa.load(str(path), sr=sr, mono=True, dtype=np.float32, **options)
     return np.ascontiguousarray(audio, dtype=np.float32)
 
 

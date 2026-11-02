@@ -1,6 +1,7 @@
 """Offline checks for the fixed memo2 seed source and stage timing report."""
 
 from pathlib import Path
+import json
 from typing import Any
 
 import pytest
@@ -38,3 +39,22 @@ def test_seed_uploads_only_memo2_and_measures_stages(tmp_path: Path, monkeypatch
     assert report["listed"] and report["state"] == "done" and report["gpu"] == "Tesla T4"
     assert [row["seconds"] for row in report["stages"]] == [2.0, 1.0, 4.0]
     assert (tmp_path / "outputs" / "modal_seed_report.json").is_file()
+
+
+def test_seed_keeps_failed_stage_timings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Return None after checking failed processing preserves its timing report and still raises."""
+    from unittest.mock import Mock
+
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "memo2.wav").write_bytes(b"memo2-audio")
+    monkeypatch.setattr(seed_modal, "ROOT", tmp_path)
+    status = {"state": "failed", "stage": "failed", "error": "Error code: 401", "gpu": "Tesla T4",
+              "parser": "spark", "history": [
+                  {"state": "queued", "stage": "queued", "updated_at": "2026-11-01T00:00:00+00:00"},
+                  {"state": "failed", "stage": "failed", "updated_at": "2026-11-01T00:01:00+00:00"}]}
+    monkeypatch.setattr(seed_modal, "api_request", Mock(side_effect=[{"memo_id": "memo2-failed"}, status, []]))
+    with pytest.raises(RuntimeError, match="401"):
+        seed_modal.seed("https://example.modal.run")
+    saved = json.loads((tmp_path / "outputs" / "modal_seed_report.json").read_text())
+    assert saved["state"] == "failed" and not saved["listed"]
+    assert saved["stages"] == [{"stage": "queued", "seconds": 60.0}]

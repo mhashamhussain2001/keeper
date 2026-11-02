@@ -125,7 +125,7 @@ def test_pipeline_two_pass_padding_and_reject(tmp_path: Path, intent: str, expec
     client = MagicMock()
     client.chat.completions.create.return_value = response(json.dumps({**payload(intent), "target": "next"}))
     parser = MuseSparkLabelParser(tmp_path / "cache.json", client=client)
-    songmap, regions, warnings = run_pipeline(source, parser, tmp_path / "out", cfg=KeeperConfig(), scores_csv=scores)
+    songmap, regions, warnings = run_pipeline(source, parser, tmp_path / "out", cfg=KeeperConfig(support_target_next=False), scores_csv=scores)
     assert parser.calls_made == 1
     assert next(region.kind for region in regions if region.start <= 8.25 < region.end) == expected
     assert "label-before-take not supported:" in warnings[0]

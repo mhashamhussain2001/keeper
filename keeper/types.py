@@ -38,6 +38,7 @@ class CommandLabel:
     heard: str | None = None
     target: Literal["previous", "next"] = "previous"
     intent: str | None = None
+    scope: Literal["whole", "last_attempt"] = "whole"
 
     def to_dict(self) -> dict:
         """Return a JSON-serializable command dictionary."""

@@ -13,11 +13,14 @@ from uuid import uuid4
 
 
 ROOT = Path(__file__).resolve().parents[1]
+OWNER = str(uuid4())
 
 
 def api_request(url: str, data: bytes | None = None, content_type: str | None = None) -> Any:
     """Return decoded API JSON or raise a clear HTTP failure without credentials."""
-    headers = {"Content-Type": content_type} if content_type is not None else {}
+    headers = {"X-Keeper-Owner": OWNER}
+    if content_type is not None:
+        headers["Content-Type"] = content_type
     try:
         with urlopen(Request(url, data=data, headers=headers), timeout=300) as response:
             return json.load(response)
@@ -47,9 +50,7 @@ def seed(url: str) -> dict[str, Any]:
         if (status["state"], status["stage"]) != previous:
             previous = status["state"], status["stage"]
             print(f"{perf_counter() - started:.1f} s: {status['state']} / {status['stage']}", flush=True)
-        if status["state"] == "failed":
-            raise RuntimeError(f"Memo {memo_id} failed: {status['error']}")
-        if status["state"] == "done":
+        if status["state"] in ("done", "failed"):
             break
         sleep(3)
     else:
@@ -59,14 +60,17 @@ def seed(url: str) -> dict[str, Any]:
                 datetime.fromisoformat(row["updated_at"])).total_seconds()}
                for row, next_row in zip(history, history[1:])]
     listed = api_request(url + "/api/memos")
-    if memo_id not in listed:
+    listed_ids = [item["id"] if isinstance(item, dict) else item for item in listed]
+    if status["state"] == "done" and memo_id not in listed_ids:
         raise RuntimeError(f"Completed memo {memo_id} is missing from /api/memos")
     report = {"url": url, "memo_id": memo_id, "wall_clock_s": perf_counter() - started,
               "upload_and_validation_s": upload_seconds, "stages": timings, "gpu": status.get("gpu"),
-              "parser": status.get("parser"), "state": status["state"], "listed": True, "status": status}
+              "parser": status.get("parser"), "state": status["state"], "listed": memo_id in listed_ids, "status": status}
     output = ROOT / "outputs" / "modal_seed_report.json"
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    if status["state"] == "failed":
+        raise RuntimeError(f"Memo {memo_id} failed: {status['error']}")
     return report
 
 

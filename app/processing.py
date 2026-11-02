@@ -9,6 +9,7 @@ from threading import Thread
 from dotenv import load_dotenv
 
 from app.storage import Settings, memo_directory, write_status
+from app.waveform import write_peaks
 from keeper.config import KeeperConfig
 from keeper.labels import MockLabelParser, MuseSparkLabelParser
 from keeper.pipeline import run_pipeline
@@ -37,8 +38,11 @@ def process_memo(memo_id: str, settings: Settings, commit: Callable[[], None] | 
         source = (settings.uploads_root / manifest["filename"]).resolve()
         if not source.is_relative_to(settings.uploads_root.resolve()):
             raise ValueError("Upload path escaped uploads root")
+        if not (directory / "peaks.json").exists():
+            write_peaks(source, directory)
         if parser_name == "spark":
-            parser = MuseSparkLabelParser(directory / "spark_cache.json", KeeperConfig().max_spark_calls)
+            parser = MuseSparkLabelParser(directory / "spark_cache.json", KeeperConfig().max_spark_calls,
+                                          prompt_v2=KeeperConfig().spark_prompt_v2)
         else:
             mock = directory / "mock_labels.json"
             mock.write_text("{}\n", encoding="utf-8")

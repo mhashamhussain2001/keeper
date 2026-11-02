@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#f5f3ed" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#191c19" media="(prefers-color-scheme: dark)">
@@ -16,7 +16,7 @@
     button,select { font:inherit; color:inherit; border:1px solid var(--line); border-radius:7px; background:var(--panel); }
     button { padding:10px 15px; cursor:pointer; min-height:44px; touch-action:manipulation; }
     button:disabled { opacity:.45; cursor:default; }
-    button:not(:disabled):hover { border-color:var(--accent); }
+    @media (hover: hover) and (pointer: fine) { button:not(:disabled):hover { border-color:var(--accent); } }
     button.primary { background:var(--accent); color:var(--panel); border-color:var(--accent); }
     :focus-visible { outline:3px solid var(--speech); outline-offset:4px; }
     header { border-bottom:1px solid var(--line); }
@@ -27,9 +27,22 @@
     .tagline { color:var(--muted); margin:0; font-size:13px; }
     .memo-controls { margin-left:auto; display:flex; align-items:center; gap:10px; }
     select { min-height:44px; max-width:300px; padding:8px 30px 8px 12px; }
-    main { padding-top:34px; padding-bottom:160px; }
+    main { padding-top:34px; padding-bottom:calc(230px + env(safe-area-inset-bottom, 0px)); }
     .eyebrow { color:var(--muted); text-transform:uppercase; letter-spacing:.12em; font-size:11px; font-weight:650; margin:0 0 7px; }
     h1 { font:normal 36px/1.2 Georgia,serif; margin:0; letter-spacing:-1px; overflow-wrap:anywhere; }
+    input,select { font-size:16px; }
+    [hidden] { display:none !important; }
+    .player { padding-bottom:env(safe-area-inset-bottom, 0px); }
+    .player-inner { flex-wrap:wrap; gap:10px; }
+    .player-progress { width:100%; display:flex; align-items:center; gap:12px; }
+    #seek { flex:1; min-width:0; min-height:30px; accent-color:var(--accent); touch-action:manipulation; }
+    #ios-hint { width:100%; margin:0; }
+    #queue-description { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    #rename-input { font:inherit; font-size:16px; padding:8px; max-width:100%; }
+    #memo-actions { margin:8px 0; }
+    #stage-breakdown { display:grid; grid-template-columns:auto auto; gap:3px 16px; max-width:400px; }
+    #stage-breakdown dd { margin:0; text-align:right; }
+    .header-inner { padding-top:calc(24px + env(safe-area-inset-top, 0px)); }
     .heading-row { display:flex; justify-content:space-between; align-items:end; gap:20px; }
     .summary { color:var(--muted); margin:0; font-variant-numeric:tabular-nums; }
     #status { min-height:24px; margin:15px 0; color:var(--muted); }
@@ -72,7 +85,7 @@
     .play-take { padding:5px 12px; min-height:36px; font-size:13px; }
     .empty { padding:24px 0; color:var(--muted); }
     .player { position:fixed; bottom:0; left:0; right:0; background:var(--panel); border-top:1px solid var(--line); }
-    .player-inner { display:flex; align-items:center; gap:12px; padding-top:18px; padding-bottom:max(18px,env(safe-area-inset-bottom)); }
+    .player-inner { display:flex; align-items:center; gap:12px; padding-top:18px; padding-bottom:18px; }
     .queue { flex:1; min-width:0; }
     .queue-title { font-size:13px; font-weight:600; margin:0; }
     #queue-description { color:var(--muted); font-size:12px; margin:2px 0 0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -83,10 +96,10 @@
     }
     @media (max-width:699px) {
       .header-inner,main,.player-inner { padding-left:20px; padding-right:20px; }
-      .header-inner { flex-wrap:wrap; gap:14px; padding-top:18px; padding-bottom:18px; }
+      .header-inner { flex-wrap:wrap; gap:14px; padding-top:calc(18px + env(safe-area-inset-top, 0px)); padding-bottom:18px; }
       .tagline { margin-left:auto; } .memo-controls { margin:0; width:100%; }
       select { flex:1; min-width:0; max-width:none; font-size:16px; }
-      main { padding-bottom:205px; } h1 { font-size:29px; }
+      main { padding-bottom:calc(290px + env(safe-area-inset-bottom, 0px)); } h1 { font-size:29px; }
       .heading-row { align-items:start; flex-direction:column; gap:8px; }
       .timeline-panel { padding:16px; } .panel-heading { flex-wrap:wrap; gap:12px; }
       .song-map { grid-template-columns:1fr; }
@@ -109,9 +122,15 @@
   </header>
   <main>
     <div class="heading-row">
-      <div><p class="eyebrow">Your working session</p><h1 id="memo-title">A place for your takes.</h1></div>
+      <div><p class="eyebrow">Your working session</p><h1 id="memo-title">A place for your takes.</h1>
+      <details><summary id="processed-time"></summary><dl id="stage-breakdown"></dl></details>
+      <div id="memo-actions" hidden><button id="rename">Rename</button> <button id="delete">Delete</button></div>
+      <form id="rename-form" hidden><label>Memo title <input id="rename-input" maxlength="120" required></label> <button type="submit">Save</button> <button type="button" id="rename-cancel">Cancel</button></form>
+      <div id="delete-confirm" hidden role="group" aria-label="Confirm deletion"><p>Delete this memo and its audio permanently?</p><button id="delete-yes">Delete memo</button> <button id="delete-cancel">Cancel</button></div>
+      </div>
       <p id="memo-summary" class="summary"></p>
     </div>
+    <p id="privacy-hint" class="hint"></p>
     <p id="status" role="status" aria-live="polite">Loading your memos…</p>
     <aside id="processing-panel" class="processing-panel" hidden aria-label="Memo processing">
       <strong id="processing-name">Processing memo</strong>
@@ -121,7 +140,8 @@
     <section class="timeline-panel" aria-labelledby="timeline-heading">
       <div class="panel-heading">
         <h2 id="timeline-heading">The whole memo</h2>
-        <div class="legend" aria-label="Activity colors">
+        <label><input id="show-detail" type="checkbox"> Show detail</label>
+        <div id="activity-legend" class="legend" aria-label="Activity colors" hidden>
           <span><i class="dot music"></i>Music</span><span><i class="dot speech"></i>Speech</span><span><i class="dot silence"></i>Silence</span>
         </div>
       </div>
@@ -138,325 +158,86 @@
         <div id="playing-status" role="status" aria-live="polite"></div>
       </div>
       <button id="play-selected" class="primary" disabled>▶ Play selected back to back</button>
-      <button id="stop" disabled>■ Stop</button>
+      <button id="transport-play" disabled>Play</button>
+      <button id="stop" disabled>Stop</button>
+      <div class="player-progress"><span id="playback-time">0:00 / 0:00</span><input id="seek" type="range" min="0" max="1" step="0.01" value="0" disabled aria-label="Playback position"></div>
+      <p id="ios-hint" class="hint" hidden>No sound? Check your iPhone's silent switch.</p>
     </div>
   </footer>
-  <script>
+  <script src="/audio.js"></script>
+  <script id="ios-audio-session">
     "use strict";
-    const $ = id => document.getElementById(id);
-    const sectionOrder = ["intro", "verse", "pre-chorus", "chorus", "bridge", "hook", "outro", "unsorted", "unlabeled"];
-    const state = { takes:[], selected:[], buffers:new Map(), sources:[], context:null,
-      epoch:0, memoEpoch:0, frame:null, busy:false, playing:null, uploading:false };
-    const seconds = value => `${Number(value).toFixed(2)}s`;
-    const takeName = take => `${take.section === "unsorted" ? "Ideas" : take.section} · ${take.variant}`;
-
-    function status(message, error = false) {
-      $("status").textContent = message;
-      $("status").classList.toggle("error", error);
-    }
-
-    async function request(url, options) {
-      const response = await fetch(url, options);
-      if (!response.ok) {
-        const payload = await response.json().catch(() => null);
-        throw new Error(typeof payload?.detail === "string" ? payload.detail : `Request failed (${response.status}).`);
+    (() => {
+      const prototype = window.KeeperPlayer.prototype;
+      let silentLoop = null, sessionReady = false, loopState = "unknown", requested = false, attempt = 0;
+      function refreshHint() {
+        // The existing UI may reveal this on iOS; only retain it if neither route works.
+        if (sessionReady || loopState !== "unavailable") document.getElementById("ios-hint").hidden = true;
       }
-      return response.json();
-    }
-
-    function element(tag, className, text) {
-      const node = document.createElement(tag);
-      if (className) node.className = className;
-      if (text !== undefined) node.textContent = text;
-      return node;
-    }
-
-    function svgElement(tag, attributes, text) {
-      const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
-      for (const [key, value] of Object.entries(attributes)) node.setAttribute(key, value);
-      if (text !== undefined) node.textContent = text;
-      return node;
-    }
-
-    function updateSelection() {
-      document.querySelectorAll("[data-take]").forEach(node => {
-        const index = state.selected.indexOf(node.dataset.take);
-        node.classList.toggle("selected", index >= 0);
-        const checkbox = node.querySelector("input");
-        if (checkbox) checkbox.checked = index >= 0;
-        const badge = node.querySelector(".order");
-        if (badge) badge.textContent = index >= 0 ? String(index + 1).padStart(2, "0") : "";
-        if (node.classList.contains("timeline-take")) node.setAttribute("aria-pressed", String(index >= 0));
-      });
-      const selected = state.selected.map(id => state.takes.find(take => take.id === id));
-      $("queue-title").textContent = selected.length ? `${selected.length} take${selected.length === 1 ? "" : "s"} selected` : "Listen to your ideas together";
-      $("queue-description").textContent = selected.length ? selected.map(takeName).join(" → ") : "Select at least two takes for back-to-back playback.";
-      $("play-selected").disabled = selected.length < 2 || state.busy || state.uploading;
-    }
-
-    function toggleSelection(take) {
-      if (!take.clip_url) { status("This take has no exported clip. Choose the fixture demo or upload a recording."); return; }
-      const index = state.selected.indexOf(take.id);
-      if (index >= 0) state.selected.splice(index, 1);
-      else state.selected.push(take.id);
-      updateSelection();
-    }
-
-    function highlight(id) {
-      if (state.playing === id) return;
-      state.playing = id;
-      document.querySelectorAll("[data-take]").forEach(node => node.classList.toggle("playing", node.dataset.take === id));
-      const take = state.takes.find(item => item.id === id);
-      $("playing-status").textContent = take ? `Playing ${takeName(take)}` : "";
-    }
-
-    function stopPlayback() {
-      state.epoch++;
-      for (const source of state.sources) {
-        try { source.stop(); } catch (_) { /* A source may already have finished. */ }
-        source.disconnect();
+      function pauseLoop() {
+        requested = false; attempt++;
+        if (silentLoop) silentLoop.pause();
       }
-      state.sources = [];
-      cancelAnimationFrame(state.frame);
-      state.busy = false;
-      highlight(null);
-      $("playing-status").textContent = "";
-      $("stop").disabled = true;
-      updateSelection();
-    }
-
-    async function decodeClip(take) {
-      if (!state.buffers.has(take.clip_url)) {
-        const promise = fetch(take.clip_url).then(response => {
-          if (!response.ok) throw new Error(`Cannot load ${takeName(take)} (${response.status}).`);
-          return response.arrayBuffer();
-        }).then(bytes => state.context.decodeAudioData(bytes));
-        state.buffers.set(take.clip_url, promise);
-        promise.catch(() => state.buffers.delete(take.clip_url));
+      function silentWav() {
+        // 100 ms of genuine PCM-16 zero samples, mono 16 kHz, at normal element volume.
+        const bytes = new Uint8Array(3244), view = new DataView(bytes.buffer);
+        for (const [offset, text] of [[0, "RIFF"], [8, "WAVE"], [12, "fmt "], [36, "data"]])
+          bytes.set([...text].map(character => character.charCodeAt(0)), offset);
+        view.setUint32(4, 3236, true); view.setUint32(16, 16, true);
+        view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+        view.setUint32(24, 16000, true); view.setUint32(28, 32000, true);
+        view.setUint16(32, 2, true); view.setUint16(34, 16, true); view.setUint32(40, 3200, true);
+        return "data:audio/wav;base64," + btoa(String.fromCharCode(...bytes));
       }
-      return state.buffers.get(take.clip_url);
-    }
-
-    async function playTakes(takes) {
-      stopPlayback();
-      const epoch = state.epoch;
-      state.busy = true;
-      $("stop").disabled = false;
-      $("playing-status").textContent = "Preparing clips…";
-      updateSelection();
-      try {
-        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-        if (!AudioContextClass) throw new Error("This browser does not support Web Audio playback.");
-        if (!state.context) state.context = new AudioContextClass();
-        await state.context.resume();
-        const buffers = await Promise.all(takes.map(decodeClip));
-        if (epoch !== state.epoch) return;
-        let when = state.context.currentTime + 0.08;
-        const schedule = [];
-        for (let index = 0; index < buffers.length; index++) {
-          const source = state.context.createBufferSource();
-          source.buffer = buffers[index];
-          source.connect(state.context.destination);
-          state.sources.push(source);
-          source.start(when);
-          schedule.push({ id:takes[index].id, start:when, end:when + buffers[index].duration });
-          when += buffers[index].duration;
-        }
-        function tick() {
-          if (epoch !== state.epoch) return;
-          const now = state.context.currentTime;
-          if (now >= when) { stopPlayback(); $("playing-status").textContent = "Playback finished."; return; }
-          highlight(schedule.find(item => item.start <= now && now < item.end)?.id || null);
-          state.frame = requestAnimationFrame(tick);
-        }
-        tick();
-      } catch (error) {
-        if (epoch !== state.epoch) return;
-        stopPlayback();
-        status(error.message, true);
+      function prepareSession() {
+        try {
+          if (navigator.audioSession) {
+            navigator.audioSession.type = "playback";
+            if (navigator.audioSession.type === "playback") {
+              sessionReady = true; pauseLoop(); refreshHint(); return;
+            }
+          }
+        } catch (_) { /* Unsupported/denied AudioSession uses the media-element route. */ }
+        sessionReady = false; requested = true; const current = ++attempt;
+        try {
+          if (!silentLoop) {
+            silentLoop = document.createElement("audio");
+            silentLoop.loop = true; silentLoop.volume = 1; silentLoop.muted = false;
+            silentLoop.playsInline = true; silentLoop.setAttribute("playsinline", "");
+            silentLoop.hidden = true; silentLoop.src = silentWav(); document.body.append(silentLoop);
+          }
+          loopState = "pending";
+          const playing = silentLoop.play(); // Intentionally inside the same user gesture as resume().
+          Promise.resolve(playing).then(() => {
+            if (current !== attempt) return;
+            loopState = "ready"; if (!requested) silentLoop.pause(); refreshHint();
+          }).catch(() => { if (current === attempt) { loopState = "unavailable"; refreshHint(); } });
+        } catch (_) { loopState = "unavailable"; }
+        refreshHint();
       }
-    }
-
-    function renderTimeline(data) {
-      const svg = $("timeline");
-      svg.replaceChildren();
-      const duration = data.duration_s;
-      if (!duration) return;
-      const x = time => 15 + (time / duration) * 970;
-      const lanes = [];
-      const brackets = [];
-      for (const take of [...state.takes].sort((a, b) => a.start - b.start)) {
-        const left = x(take.start);
-        const occupiedEnd = Math.max(x(take.end), left + takeName(take).length * 7);
-        let lane = lanes.findIndex(end => end + 12 < left);
-        if (lane < 0) lane = lanes.length;
-        lanes[lane] = occupiedEnd;
-        brackets.push({ take, lane });
-      }
-      const barY = 24 + Math.max(lanes.length, 1) * 32;
-      svg.setAttribute("viewBox", `0 0 1000 ${barY + 70}`);
-      for (const { take, lane } of brackets) {
-        const y = 25 + lane * 32;
-        const group = svgElement("g", { class:"timeline-take", "data-take":take.id, role:"button", tabindex:0,
-          "aria-label":`Select ${takeName(take)}, ${seconds(take.start)} to ${seconds(take.end)}`, "aria-pressed":"false" });
-        group.append(svgElement("rect", { x:x(take.start), y:y - 18, width:Math.max(x(take.end) - x(take.start), 24), height:32, fill:"transparent" }));
-        group.append(svgElement("path", { d:`M ${x(take.start)} ${y + 10} v -7 H ${x(take.end)} v 7` }));
-        group.append(svgElement("text", { x:x(take.start) + 2, y:y - 5 }, takeName(take)));
-        group.addEventListener("click", () => toggleSelection(take));
-        group.addEventListener("keydown", event => {
-          if (event.key === "Enter" || event.key === " ") { event.preventDefault(); toggleSelection(take); }
-        });
-        svg.append(group);
-      }
-      const colors = { music:"var(--music)", speech:"var(--speech)", silence:"var(--silence)" };
-      svg.append(svgElement("rect", { x:15, y:barY, width:970, height:24, rx:3, fill:colors.silence }));
-      for (const region of data.regions) {
-        const rect = svgElement("rect", { x:x(region.start), y:barY, width:Math.max(0, x(region.end) - x(region.start)), height:24, fill:colors[region.kind] || colors.silence });
-        rect.append(svgElement("title", {}, `${region.kind}: ${seconds(region.start)}–${seconds(region.end)}`));
-        svg.append(rect);
-      }
-      const step = Math.max(1, Math.ceil(duration / 8 / 5) * 5);
-      for (let time = 0; time < duration; time += step) {
-        if (duration - time < step * 0.35 && time > 0) continue;
-        svg.append(svgElement("line", { x1:x(time), x2:x(time), y1:barY + 28, y2:barY + 33, stroke:"var(--line)" }));
-        svg.append(svgElement("text", { x:x(time), y:barY + 50, fill:"var(--muted)", "font-size":11 }, `${time}s`));
-      }
-      svg.append(svgElement("text", { x:985, y:barY + 50, fill:"var(--muted)", "font-size":11, "text-anchor":"end" }, seconds(duration)));
-    }
-
-    function renderSongMap(data) {
-      const map = $("song-map");
-      map.replaceChildren();
-      const sections = data.songmap.sections;
-      const names = [...sectionOrder, ...Object.keys(sections).filter(name => !sectionOrder.includes(name))];
-      for (const name of names) {
-        if (!sections[name]?.length) continue;
-        const column = element(name === "rejected" ? "details" : "section", "section-column");
-        const heading = element(name === "rejected" ? "summary" : "h3", "section-title", name === "unsorted" ? "Ideas" : name);
-        heading.append(element("span", "section-count", String(sections[name].length).padStart(2, "0")));
-        column.append(heading);
-        for (const take of state.takes.filter(item => item.section === name)) {
-          const card = element("article", "take-card");
-          card.dataset.take = take.id;
-          const label = element("label", "take-label");
-          const checkbox = element("input");
-          checkbox.type = "checkbox";
-          checkbox.disabled = !take.clip_url;
-          checkbox.setAttribute("aria-label", `Select ${takeName(take)}`);
-          checkbox.addEventListener("change", () => toggleSelection(take));
-          label.append(checkbox, element("span", "", take.variant), element("span", "order"));
-          const footer = element("div", "take-footer");
-          const play = element("button", "play-take", "▶ Play");
-          play.setAttribute("aria-label", `Play ${takeName(take)}`);
-          play.disabled = !take.clip_url;
-          play.addEventListener("click", () => playTakes([take]));
-          footer.append(element("span", "take-duration", take.clip_url ? `${seconds(take.end - take.start)} duration` : "No clip exported"), play);
-          card.append(label, element("p", "take-times", `${seconds(take.start)} — ${seconds(take.end)}`), footer);
-          if (take.heard) card.append(element("p", "take-heard", take.heard));
-          column.append(card);
-        }
-        map.append(column);
-      }
-      if (!state.takes.length) map.append(element("p", "empty", "No takes found in this memo. Try another recording."));
-    }
-
-    async function loadMemo(id) {
-      const memoEpoch = ++state.memoEpoch;
-      stopPlayback();
-      state.selected = [];
-      state.takes = [];
-      state.buffers.clear();
-      $("song-map").replaceChildren(element("p", "empty", "Loading song map…"));
-      $("timeline").replaceChildren();
-      $("memo-title").textContent = id;
-      $("memo-summary").textContent = "";
-      updateSelection();
-      status("Loading memo…");
-      try {
-        const data = await request(`/api/memos/${encodeURIComponent(id)}`);
-        if (memoEpoch !== state.memoEpoch) return;
-        state.takes = Object.entries(data.songmap.sections).flatMap(([section, takes]) => takes.map(take => ({ ...take, section })));
-        $("memo-summary").textContent = `${seconds(data.duration_s)} · ${state.takes.length} takes · Parser: ${data.songmap.parser || "legacy / unknown"}`;
-        renderTimeline(data);
-        renderSongMap(data);
-        updateSelection();
-        const placeholders = state.takes.some(take => take.clip_path?.split("/").pop().startsWith("placeholder_"));
-        status(placeholders ? "Demo audio: these clips are placeholder tones, not the original recording." : "Click a bracket or check a card to add a take to your listening order.");
-      } catch (error) {
-        if (memoEpoch !== state.memoEpoch) return;
-        $("song-map").replaceChildren(element("p", "empty", "This memo could not be loaded. Choose another memo."));
-        status(error.message, true);
-      }
-    }
-
-    async function refreshMemos(preferred) {
-      const ids = await request("/api/memos");
-      const picker = $("memo-picker");
-      picker.replaceChildren();
-      if (!ids.length) {
-        picker.append(new Option("No memos yet", ""));
-        status("Upload a recording to start your first song map.");
-        return;
-      }
-      for (const id of ids) picker.append(new Option(id, id));
-      const id = ids.includes(preferred) ? preferred : ids.includes("fixture_demo") ? "fixture_demo" : ids[0];
-      picker.value = id;
-      await loadMemo(id);
-    }
-
-    async function waitForMemo(memoId) {
-      while (true) {
-        const progress = await request(`/api/memos/${encodeURIComponent(memoId)}/status`);
-        $("processing-stage").textContent = progress.stage;
-        if (progress.state === "done") return;
-        if (progress.state === "failed") throw new Error(progress.error || "Memo processing failed.");
-        await new Promise(resolve => setTimeout(resolve, 3000));
-      }
-    }
-
-    $("memo-picker").addEventListener("change", event => { if (event.target.value) loadMemo(event.target.value); });
-    $("upload-button").addEventListener("click", () => $("upload-file").click());
-    $("stop").addEventListener("click", stopPlayback);
-    $("play-selected").addEventListener("click", () => playTakes(state.selected.map(id => state.takes.find(take => take.id === id))));
-    $("upload-file").addEventListener("change", async event => {
-      const file = event.target.files[0];
-      if (!file) return;
-      if (file.size > 50 * 1024 * 1024) { status("Audio upload must be at most 50 MB.", true); event.target.value = ""; return; }
-      stopPlayback();
-      state.uploading = true;
-      $("upload-button").disabled = true;
-      $("memo-picker").disabled = true;
-      $("upload-button").textContent = "Processing…";
-      updateSelection();
-      status("Uploading and validating your recording.");
-      $("processing-panel").hidden = false;
-      $("processing-name").textContent = file.name;
-      $("processing-stage").textContent = "Uploading and validating audio";
-      $("processing-elapsed").textContent = "0:00";
-      const started = performance.now();
-      const timer = setInterval(() => { $("processing-elapsed").textContent = seconds((performance.now() - started) / 1000); }, 1000);
-      try {
-        const form = new FormData();
-        form.append("file", file);
-        const result = await request("/api/memos", { method:"POST", body:form });
-        status("Processing your recording. The stage below updates every three seconds.");
-        await waitForMemo(result.memo_id);
-        await refreshMemos(result.memo_id);
-        $("processing-stage").textContent = "Done";
-      } catch (error) { $("processing-stage").textContent = error.message; status(error.message, true); }
-      finally {
-        clearInterval(timer);
-        $("processing-elapsed").textContent = seconds((performance.now() - started) / 1000);
-        state.uploading = false;
-        $("upload-button").disabled = false;
-        $("memo-picker").disabled = false;
-        $("upload-button").textContent = "↑ Upload memo";
-        event.target.value = "";
-        updateSelection();
-      }
-    });
-    window.addEventListener("pagehide", stopPlayback);
-    refreshMemos().catch(error => status(error.message, true));
+      const unlock = prototype.unlock, start = prototype.start, emit = prototype.emit;
+      prototype.unlock = function (...args) { prepareSession(); return unlock.apply(this, args); };
+      prototype.start = function (...args) {
+        // start() stops old buffer sources before its first await; that is not a user stop.
+        this.keeperStarting = true;
+        try {
+          return Promise.resolve(start.apply(this, args)).then(result => {
+            // Natural completion must release the loop even when background RAF is throttled.
+            const last = this.sources.at(-1), generation = this.generation;
+            if (last && this.backend === "web" && this.mode === "playing") {
+              last.onended = () => { if (generation === this.generation && this.mode === "playing") this.finish(); };
+            }
+            return result;
+          });
+        } finally { this.keeperStarting = false; }
+      };
+      prototype.emit = function (...args) {
+        const result = emit.apply(this, args);
+        if ((this.mode === "stopped" && !this.keeperStarting) || ["paused", "ended"].includes(this.mode)) pauseLoop();
+        refreshHint(); return result;
+      };
+    })();
   </script>
+  <script src="/app.js"></script>
 </body>
 </html>

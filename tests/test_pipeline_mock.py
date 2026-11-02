@@ -190,3 +190,28 @@ def test_muse_stub_never_calls_api(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(socket, "create_connection", _forbid_network)
     parser = MuseSparkLabelParser()
     assert parser.client is None and parser.calls_made == 0
+
+
+def test_score_checkpoint_survives_command_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Return None after checking a failed command call preserves scores for a no-rescore retry."""
+    from unittest.mock import Mock
+
+    audio, cached, labels = _synthetic_inputs(tmp_path)
+    scores = pd.read_csv(cached)
+    scorer = Mock()
+    scorer.score_windows.return_value = scores
+    failing = Mock(spec=MockLabelParser)
+    failing.parse.side_effect = RuntimeError("Error code: 401")
+    # A plain mock must not fabricate a padding attribute used by the pipeline.
+    failing.audio_padding_s = 0.0
+    destination = tmp_path / "failed-result"
+    with pytest.raises(RuntimeError, match="401"):
+        pipeline.run_pipeline(audio, failing, destination, scorer=scorer)
+    scorer.score_windows.assert_called_once()
+    checkpoint = destination / "window_scores.csv"
+    pd.testing.assert_frame_equal(pd.read_csv(checkpoint), scores)
+    assert not (destination / "window_scores.tmp").exists()
+    assert not (destination / "songmap.json").exists()
+    monkeypatch.setattr(pipeline, "ASTScorer", _forbid_ast)
+    songmap, _, _ = pipeline.run_pipeline(audio, MockLabelParser(labels), destination, scores_csv=checkpoint)
+    assert set(songmap.sections) == {"chorus", "verse"}
