@@ -48,6 +48,8 @@ class KeeperConfig:
     max_spark_calls: int = 40
     spark_prompt_v2: bool = True
     parallel_spark: bool = True
+    merge_adjacent_commands: bool = True
+    warm_librosa_on_start: bool = True
     fast_audio_loading: bool = False
     support_target_next: bool = True
     support_last_attempt: bool = True

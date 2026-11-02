@@ -11,10 +11,10 @@ from uuid import uuid4
 from scripts import seed_modal
 
 
-def measure(url: str, root: Path = seed_modal.ROOT) -> dict:
+def measure(url: str, root: Path = seed_modal.ROOT, output_name: str = "logic_v2_upload") -> dict:
     """Return upload-to-completion timing for test_2.m4a, retaining private access in an ignored file."""
     source = root / "data/test_2.m4a"
-    destination = root / "outputs/logic_v2_upload"
+    destination = root / "outputs" / output_name
     destination.mkdir(parents=True, exist_ok=True)
     (destination / "owner.json").write_text(json.dumps({"owner": seed_modal.OWNER}) + "\n", encoding="utf-8")
     boundary = "keeper-" + uuid4().hex

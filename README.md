@@ -79,6 +79,17 @@ Cache keys are single-flight within a parser; writes and HTTP-call reservations
 are locked. `spark_cache.calls.json` preserves the cumulative call count even
 if a job stops before saving its result. Keep it alongside the result cache.
 
+`merge_adjacent_commands=True` joins consecutive same-section commands across
+silence for cutting. The joined command spans the first start to the last end
+and uses `next` if any member does. Final-command metadata is retained and heard
+text is combined. Activity regions and individual Spark cache entries are retained.
+Set the flag false to compare with the previous cutting behavior.
+
+`warm_librosa_on_start=True` primes librosa using an in-memory silent WAV in the
+Modal GPU worker's container startup hook. The decoder is unchanged. Startup
+warmup is included in cold queue time, and its duration is recorded as
+`gpu_librosa_warmup_s` in the memo status. Set the flag false to disable it.
+
 Run the v1/v2 cut ablation under both speech-protection settings:
 
 ```powershell

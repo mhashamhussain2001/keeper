@@ -49,25 +49,44 @@ def benchmark_audio() -> dict:
     return result
 
 
-@app.function(image=image, gpu="T4", cpu=2, memory=8192, timeout=1800,
+@app.cls(image=image, gpu="T4", cpu=2, memory=8192, timeout=1800,
               volumes={"/data": volume}, secrets=[modal.Secret.from_name("baseten")],
               min_containers=0, max_containers=1, scaledown_window=30, include_source=False)
-def process_memo(memo_id: str) -> None:
-    """Return None after publishing GPU processing results and committing every status transition."""
-    from app.processing import process_memo as process
-    from app.storage import Settings, memo_directory, write_status
-    import torch
+class GPUWorker:
+    """Process memos after optional once-per-container librosa initialization."""
 
-    volume.reload()
-    settings = Settings()
-    try:
-        if not torch.cuda.is_available():
-            raise RuntimeError("The requested GPU worker has no CUDA device")
-        process(memo_id, settings, commit=volume.commit, gpu=torch.cuda.get_device_name(0))
-    except Exception as exc:
-        write_status(memo_directory(settings, memo_id), "failed", "failed", str(exc), gpu="T4")
+    @modal.enter()
+    def startup(self) -> None:
+        """Return None after priming librosa before the container receives its first memo."""
+        from keeper.audio_io import warm_librosa
+        from keeper.config import KeeperConfig
+
+        self.warmup_s = warm_librosa() if KeeperConfig().warm_librosa_on_start else 0.0
+        print(f"librosa container warmup: {self.warmup_s:.6f} s", flush=True)
+
+    @modal.method()
+    def process_memo(self, memo_id: str) -> None:
+        """Return None after publishing GPU processing results and committing every status transition."""
+        import json
+        from app.processing import process_memo as process
+        from app.storage import Settings, memo_directory, write_status
+        import torch
+
+        volume.reload()
+        settings = Settings()
+        directory = memo_directory(settings, memo_id)
+        try:
+            if not torch.cuda.is_available():
+                raise RuntimeError("The requested GPU worker has no CUDA device")
+            process(memo_id, settings, commit=volume.commit, gpu=torch.cuda.get_device_name(0))
+        except Exception as exc:
+            write_status(directory, "failed", "failed", str(exc), gpu="T4")
+            volume.commit()
+            raise
+        status = json.loads((directory / "status.json").read_text())
+        write_status(directory, status["state"], status["stage"], status.get("error"),
+                     gpu_librosa_warmup_s=self.warmup_s)
         volume.commit()
-        raise
 
 
 @app.function(image=image, cpu=1, memory=2048, timeout=300, volumes={"/data": volume},
@@ -79,7 +98,7 @@ def web() -> object:
 
     def start_processing(memo_id: str) -> None:
         """Return None after spawning a durable Modal GPU invocation without awaiting its result."""
-        process_memo.spawn(memo_id)
+        GPUWorker().process_memo.spawn(memo_id)
 
     server.start_processing = start_processing
     server.reload_storage = volume.reload

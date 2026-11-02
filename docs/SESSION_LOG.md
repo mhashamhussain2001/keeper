@@ -1167,3 +1167,98 @@ GPU was Tesla T4; parser Spark. Fresh upload API usage: 8 calls,
   compatibility; retain diagnostic ffmpeg behind its disabled flag; leave
   the fresh upload private, with its owner token stored outside the report.
   No follow-up tuning was performed after observing results.
+
+
+## 2026-11-01 — Logic v2.1: command chaining and GPU container librosa warmup
+
+- Read AGENTS.md and private/prompts/codex_prompt_logic_v2_1.md. Added
+  merge_adjacent_commands=True and warm_librosa_on_start=True. No existing
+  thresholds, decoder choice, samples, prompt, or Spark cache keys changed.
+  No new dependencies.
+- keeper/commands.py joins consecutive speech commands with identical sections
+  across silence (or directly adjacent), stopping at music, other-section speech,
+  or non-command speech. Cutting uses the earliest start, latest end, and next
+  if any member says next. Metadata comes from the last command; heard text is
+  concatenated in chronological order. Scope therefore follows the last command.
+  No additional time limit was introduced. This is a private cutting timeline;
+  returned frame/activity regions and individual cached command records stay
+  unchanged. Setting merge_adjacent_commands=False restores the prior cut view.
+- Converted the T4 worker to Modal GPUWorker with a modal.enter startup hook
+  and a modal.method process_memo. Web dispatch spawns that method with the same
+  volume, secret, resource limits, and processing entry point. The hook primes
+  librosa once per container by decoding/resampling a 0.1-second, 44.1 kHz,
+  in-memory silent PCM-16 WAV to the normal 16 kHz mono float32 output. The
+  flag false skips warmup. Status records gpu_librosa_warmup_s, and startup logs
+  print its duration. Warmup moves lazy initialization into cold queueing;
+  it does not remove that cost from a cold upload's total elapsed time.
+- Full suite: .venv\Scripts\python.exe -m pytest -q: **219 passed, 1 skipped**
+  in 13.66 s, five existing decoder warnings; skip is local CUDA. Added tests
+  for memo2 bridge chaining, flag-off behavior, no mutation, music barriers,
+  different section/non-command barriers, 3-command chaining and target union,
+  and exact decoder sample equality before/after warmup. test_real_memo.py is
+  unchanged and passes original thresholds. Real memo1 (457,266 samples) and
+  memo2 WAV (6,023,083 samples) were also exactly array-equal before/after warmup.
+- Re-ran all four logic-v2 cut/protection settings with chaining enabled.
+  Existing AST CSVs were hash-checked unchanged; AST inference is blocked by
+  the evaluation. OpenAI client construction was additionally patched to raise
+  on any cache miss. Results: memo1 zero calls/tokens and 12 cache hits; memo2
+  zero calls/tokens and 30 cache hits. Reports/JSON/clips are in
+  outputs/<memo>/logic_v2_1/, preserving previous logic_v2/ reports.
+- Memo1 frame metrics, boundaries, and all take metadata are identical under
+  every setting after normalizing exported clip directory prefixes. Default
+  accuracy .859649, recalls music/speech/silence 1/1/.555556, positive hits 3/3.
+  Speech protection remains off by default, since its prior regression persists.
+- Memo2 bridge truth 294.84-305.10 now produces a bridge take **295.2-305.5**
+  under v2 with protection either off or on: HIT, absolute start/end error
+  **.360/.400 s**. The two cached commands span 285-287 and 288.5-290; chaining
+  creates one 285-290 command whose target is next. Positive hits increase from
+  2/4 to 3/4 with protection off, and from 3/4 to 4/4 with protection on.
+  Frame metrics are unchanged. V1 rows still have support_target_next=False,
+  so they continue to miss the bridge despite chaining being enabled.
+
+## memo1
+
+| Setting | Frame accuracy | Recall music | Recall speech | Recall silence | Commands detected | Positive take hits | chorus A 0.00-8.00 S/E error | chorus B 10.52-20.64 S/E error | chorus C 23.05-26.85 S/E error |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| v1, protect off | 0.859649 | 1.000000 | 1.000000 | 0.555556 | 3/3 | 3/3 | 0.000/0.000 | 0.320/0.360 | 0.350/0.150 |
+| v2, protect off | 0.859649 | 1.000000 | 1.000000 | 0.555556 | 3/3 | 3/3 | 0.000/0.000 | 0.320/0.360 | 0.350/0.150 |
+| v1, protect on | 0.824561 | 0.968750 | 1.000000 | 0.500000 | 3/3 | 3/3 | 0.000/0.000 | 0.320/1.140 | 0.350/0.150 |
+| v2, protect on | 0.824561 | 0.968750 | 1.000000 | 0.500000 | 3/3 | 3/3 | 0.000/0.000 | 0.320/1.140 | 0.350/0.150 |
+
+## memo2
+
+| Setting | Frame accuracy | Recall music | Recall speech | Recall silence | Commands detected | Positive take hits | verse 21.95-37.74 S/E error | rejected 92.32-97.31 S/E error | chorus 114.87-120.11 S/E error | bridge 294.84-305.10 S/E error | chorus 348.67-372.73 S/E error |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| v1, protect off | 0.914706 | 0.998012 | 0.793103 | 0.655405 | 7/9 | 2/4 | 1.250/0.760 | 0.620/1.190 | 11.170/1.890 | 0.360/0.900 | 38.670/0.770 |
+| v2, protect off | 0.914706 | 0.998012 | 0.793103 | 0.655405 | 7/9 | 3/4 | 1.250/0.760 | 0.620/1.190 | 11.170/1.890 | 0.360/0.400 | 38.670/0.770 |
+| v1, protect on | 0.920588 | 0.998012 | 0.931034 | 0.655405 | 8/9 | 3/4 | 1.250/0.760 | 0.620/1.190 | 10.870/0.110 | 0.360/0.900 | 38.670/0.770 |
+| v2, protect on | 0.920588 | 0.998012 | 0.931034 | 0.655405 | 8/9 | 4/4 | 1.250/0.760 | 0.620/1.190 | 0.370/0.110 | 0.360/0.400 | 38.670/0.770 |
+
+Deployment succeeded with the required venv's modal deploy modal_app.py
+in 51.632 s at https://mhashamhussain2001--keeper-web.us-east.modal.run.
+Fresh upload was data/test_2.m4a via the API; this expressly requested fresh
+upload runs AST and Spark without changing either evaluation cache. Original
+logic-v2 timing artifacts were preserved; new artifacts and private owner token
+are under ignored outputs/logic_v2_1_upload/. No secret or source audio committed.
+
+Memo ID: 25b490c6888541cbb6edaaf795ba29ad; duration 376.832 s.
+Measured container hook warmup: 19.126547961 s.
+
+| Stage | Previous v2 seconds | v2.1 seconds |
+| --- | --- | --- |
+| Upload/validation HTTP | 28.728553 | 26.682313 |
+| queued | 9.796058 | 29.188271 |
+| loading audio | 21.280498 | 3.212455 |
+| scoring audio (AST) | 61.435414 | 62.861872 |
+| reading commands (Spark) | 11.931459 | 16.191166 |
+| cutting takes | 1.471329 | 0.991906 |
+| exporting clips | 0.497090 | 1.058700 |
+| Queue to done | 106.411848 | 113.504370 |
+| Request to verified results | 140.392479 | 145.150394 |
+
+Stage timings include storage/status publication; client elapsed includes
+validation, HTTP overhead, polling, and result retrieval. This is one cold upload
+per version, so variation in AST/API/network time does not establish a general
+throughput improvement. Cold queue time includes the startup warmup.
+README documents both flags and the worker hook. git diff --check passed.
+No commit was requested or made; existing committed work was preserved.

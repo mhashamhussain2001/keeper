@@ -1,6 +1,7 @@
 """Directional take selection and optional last-attempt selection from command boundaries."""
 
 from keeper.config import KeeperConfig
+from keeper.commands import chain_commands
 from keeper.types import CommandLabel, Region, Take
 
 
@@ -11,6 +12,8 @@ def cut_takes(
     cfg: KeeperConfig,
 ) -> tuple[list[tuple[Take, CommandLabel]], list[str]]:
     """Return provisional takes paired with commands and warnings for commands without music."""
+    if cfg.merge_adjacent_commands:
+        regions, command_labels = chain_commands(regions, command_labels)
     takes: list[tuple[Take, CommandLabel]] = []
     warnings: list[str] = []
     previous_end = 0.0

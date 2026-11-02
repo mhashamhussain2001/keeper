@@ -38,7 +38,7 @@ def scope_target_report(truth: list[tuple[float, float, str]], records: list[dic
         f"\n\nScope accuracy: {scope_ok}/{len(rows)}; target accuracy: {target_ok}/{len(rows)} (missed commands count wrong).", counts
 
 
-def evaluate(name: str, root: Path = ROOT) -> tuple[str, dict[str, Any]]:
+def evaluate(name: str, root: Path = ROOT, output_name: str = "logic_v2") -> tuple[str, dict[str, Any]]:
     """Return and save four cached-AST Spark settings, command diagnostics, and all truth-take errors."""
     fixture = root / "tests/fixtures/test_memo"
     audio = root / "data" / ("test.wav" if name == "memo1" else "memo2.wav")
@@ -49,7 +49,7 @@ def evaluate(name: str, root: Path = ROOT) -> tuple[str, dict[str, Any]]:
         raise FileNotFoundError("Real audio and cached AST scores required; refusing to rescore")
     checksum = hashlib.sha256(scores.read_bytes()).hexdigest()
     duration = json.loads((fixture / "meta.json").read_text())["duration_s"] if name == "memo1" else None
-    output = root / "outputs" / name / "logic_v2"
+    output = root / "outputs" / name / output_name
     output.mkdir(parents=True, exist_ok=True)
     empty = output / "empty.json"
     empty.write_text("{}", encoding="utf-8")

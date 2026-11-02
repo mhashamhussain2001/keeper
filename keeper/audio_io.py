@@ -3,10 +3,25 @@
 from math import ceil
 from pathlib import Path
 import subprocess
+import io
+from time import perf_counter
 
 import numpy as np
 
 from keeper.config import DB_AMPLITUDE_FACTOR, RMS_EPSILON, KeeperConfig
+
+
+def warm_librosa() -> float:
+    """Return seconds spent importing and priming the unchanged librosa loader with in-memory silence."""
+    started = perf_counter()
+    import librosa
+    import soundfile as sf
+
+    stream = io.BytesIO()
+    sf.write(stream, np.zeros(4410, dtype=np.float32), 44100, format="WAV", subtype="PCM_16")
+    stream.seek(0)
+    librosa.load(stream, sr=16000, mono=True, dtype=np.float32)
+    return perf_counter() - started
 
 
 def load_audio(path: str | Path, sr: int, use_ffmpeg: bool | None = None,
