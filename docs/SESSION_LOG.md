@@ -653,3 +653,94 @@
   open; explicit resource/idle caps and four OpenMP/MKL threads; SDK-managed
   Modal dependency left out of application requirements; UTF-8 CLI on Windows.
   No thresholds/defaults, audio, fixture scores, secrets, or commits changed.
+
+## 2026-11-01 - Learned frame classifier experiment with whole-memo holdouts
+
+- Read AGENTS.md and private/prompts/codex_prompt_learned_frames.md.
+  Prerequisite satisfied: Spark parser is committed as `59f7237`. Added
+  scikit-learn==1.9.1 to requirements.txt as a direct experimental dependency
+  for logistic regression and the tree. It was already installed through
+  librosa; no package installation or environment upgrade was needed.
+- Added scripts/learn_frame_model.py. Exactly two evaluations: train memo2
+  -> test memo1 and train memo1 -> test memo2. No random frame splits, tuning,
+  feature selection, combined-memo refit, model deployment, or default changes.
+  Adjacent frames reuse overlapping two-second windows and previous/next
+  context, so splitting frames randomly would leak recording information.
+- Features are the requested twelve: speech, singing/instrument groups, raw
+  Singing/Humming/Music, RMS minus file p10/median, previous/next speech and
+  singing group. All score columns use the existing overlap-averaging helper.
+  Endpoint neighbors repeat the endpoint; neighbors are computed before
+  excluding unclear targets. Midpoint target gaps are silence; singing and
+  instrument map to music; cmd:/take: labels never affect training targets.
+- Memo1 uses the numeric fixture only: 28.28 s, 57 scored frames, music/
+  speech/silence counts 32/7/18. Trailing fixture RMS/windows beyond that
+  duration are ignored as in the current numeric pipeline. Memo2 uses the
+  existing cached CSV and reads data/memo2.wav only for RMS: 376.442687 s,
+  753 frames, 680 scored, 73 unclear excluded, counts 503/29/148. Prediction
+  still covers all frames for contiguous downstream regions. File-level
+  RMS p10/median: memo1 -57.260/-16.800 dBFS, memo2 -52.764/-23.671 dBFS.
+- Logistic regression: training-only StandardScaler, balanced class weights,
+  lbfgs multinomial loss, C=1, max_iter=5000, seed=0, convergence warnings
+  treated as errors. Tree: balanced weights, max_depth=3, seed=0, otherwise
+  library defaults. Printed tree rules in raw units and logistic coefficients
+  per class in standardized units; saved scaler means/scales and full fitted
+  coefficients in JSON. Whole-file RMS centering includes unlabeled held-out
+  audio statistics as requested; this and next-frame context are offline,
+  noncausal features, not train/test label leakage.
+- Compared hand-rule voting/mode labels with direct model predictions. All
+  methods then share current region merging/short absorption, oracle cutting,
+  unlabeled recovery, and edge trim. Main metrics use final regions; raw
+  pre-absorption accuracy is shown alongside. Current defaults remain
+  protect_speech_runs=False, edge_trim=True, trim_singing_min=0.0018.
+- Downstream oracle attachments are rebuilt for each prediction, using
+  maximum-overlap speech, latest command on collisions, and A/B/C variants
+  from normalized fixture truth. Current Spark-compatible intent mapping:
+  file named section; keep unsorted; reject rejected; none non-command.
+  target=next keeps preceding-take behavior with a warning. Detection means
+  truth speech overlap. Positive hits require same section and >=50% truth
+  coverage; rejected truth is excluded. Boundary errors independently match
+  maximum overlap across all sections, including rejected/unlabeled output.
+- Held-out results (accuracy after common region processing):
+
+  | Held-out memo | Method | Accuracy | Recall music/speech/silence | Commands | Positive hits |
+  | --- | --- | --- | --- | --- | --- |
+  | memo1 | hand | .859649 | 1.000000/1.000000/.555556 | 3/3 | 3/3 |
+  | memo1 | logistic | .578947 | .500000/1.000000/.555556 | 3/3 | 1/3 |
+  | memo1 | tree | .912281 | .906250/1.000000/.888889 | 3/3 | 1/3 |
+  | memo2 | hand | .914706 | .998012/.793103/.655405 | 7/9 | 2/4 |
+  | memo2 | logistic | .863235 | .898608/.206897/.871622 | 3/9 | 0/4 |
+  | memo2 | tree | .247059 | .029821/.206897/.993243 | 3/9 | 0/4 |
+
+  Before-absorption accuracies: memo1 hand/logistic/tree
+  .859649/.596491/.912281; memo2 .913235/.866176/.291176.
+  Memo1 boundary matches/misses/extras are 3/0/0 throughout. Memo2:
+  hand 5/0/4, logistic 5/0/7, tree 0/5/1. Full confusion matrices, every
+  per-truth start/end error, warnings, tree rules, and coefficient tables
+  are in outputs/learned_frames/report.md and pasted in the reply.
+- Interpretation: the tree trained on memo2 improves memo1 frame accuracy
+  but loses section filing (1/3 positive hits versus 3/3). Both learned
+  methods lose positive hits on both held-out memos. Training the tree on
+  only memo1 yields 24.71% held-out memo2 accuracy. Section-agnostic boundary
+  matches can be unlabeled takes and must not be confused with positive hits.
+  The two RMS features are affine duplicates within a training file and
+  become identical standardized columns, explaining equal coefficients.
+  Retained the requested features and parameters; did not tune on results.
+- Command: `.\.venv\Scripts\python.exe -X utf8 scripts/learn_frame_model.py`.
+  Wrote ignored report.md/results.json, scored feature tables (unclear removed),
+  full-timeline prediction CSVs, and per-method region/songmap JSON under
+  outputs/learned_frames/. No audio exports or binary production model.
+  Input score SHA-256 verified unchanged: memo1
+  `8A299EB2948A8BCA5651CC1BF90F27FDED8DA1D340F2213F279FD531A7703A96`;
+  memo2 `EFFC91F24B4A8BF53265F8720FF53200A883F868E7A27D9BADBA4AD68B546D77`.
+- Added six offline tests for feature projection/neighbor boundaries, target
+  gaps and unclear exclusion, label-independent features, scored training-only
+  scaling, missing-cache refusal, exact whole-memo fit boundaries, no AST,
+  full prediction timelines, baseline agreement with the real numeric
+  pipeline, and current reject mapping. Final full suite
+  `.\.venv\Scripts\python.exe -m pytest`: **201 passed, 1 skipped** in
+  **13.85 s**, five existing/intentional decoder warnings. Skip is local CUDA.
+  git diff --check passes; unchanged test_real_memo passes.
+- No new keeper/, web app, model thresholds/defaults, audio, fixture labels,
+  cached scores, deployment, or secret changes. Preserved all earlier
+  uncommitted work; no commits made. Pipeline/config hashes remain the same
+  as the preceding entries. This remains an experiment only.
