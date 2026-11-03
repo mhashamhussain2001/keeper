@@ -230,7 +230,7 @@ def test_static_home_page() -> None:
     """Return None after checking the buildless home page is served by the app."""
     response = request("GET", "/")
     assert response.status == 200 and "text/html" in response.headers["content-type"]
-    assert b"Play selected back to back" in response.body
+    assert b"Play through" in response.body and b"Recording" in response.body and b"Canvas" in response.body
 
 
 @pytest.mark.parametrize("parser_name", ["mock", "spark"])
@@ -349,7 +349,9 @@ def test_showcase_is_public_but_owner_edits_stay_private(memo: Path) -> None:
     assert request("GET", "/api/memos/demo", owner=None).status == 200
     assert request("GET", "/api/memos/demo/status", owner=OWNER_B).status == 200
     assert request("GET", "/api/memos/demo/clips/clips/chorus%20a.wav", owner=None).status == 200
-    assert request("DELETE", "/api/memos/demo", owner=OWNER_B).status == 404
+    assert request("DELETE", "/api/memos/demo", owner=OWNER_B).status == 403
+    assert request("DELETE", "/api/memos/demo", owner=OWNER_A).status == 403
+    assert memo.is_dir()
     assert request("PATCH", "/api/memos/demo", b'{"title":"No"}', "application/json", owner=None).status == 404
     set_showcase(server.settings, "demo", False)
     assert request("GET", "/api/memos", owner=None).json() == []

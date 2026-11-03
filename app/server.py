@@ -8,13 +8,14 @@ from pathlib import Path
 from typing import Annotated, Any
 from urllib.parse import quote
 from uuid import uuid4
+from typing import Literal
 from collections.abc import Awaitable, Callable
 
 from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from starlette.responses import Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, model_validator
 
 from app.metadata import friendly_title, owner_token, owns, public_meta, read_meta, save_meta
 from app.processing import start_local_processing
@@ -104,7 +105,10 @@ def list_memos(x_keeper_owner: Owner = None) -> list[dict[str, Any]]:
         try:
             directory, metadata = _access(directory.name, owner)
             if _completed(directory):
-                memos.append({"id": directory.name, **public_meta(metadata, owner)})
+                region_data = _read_json(directory / "regions.json")
+                regions = region_data["regions"] if isinstance(region_data, dict) else region_data
+                duration = max((float(region["end"]) for region in regions), default=0.0)
+                memos.append({"id": directory.name, **public_meta(metadata, owner), "duration_s": duration})
         except HTTPException:
             continue
     return sorted(memos, key=lambda row: (row["owned"], row["created_at"] or "", row["id"]), reverse=True)
@@ -179,7 +183,12 @@ def rename_memo(memo_id: str, change: RenameMemo, x_keeper_owner: Owner = None) 
 def delete_memo(memo_id: str, x_keeper_owner: Owner = None) -> dict[str, bool]:
     """Return deleted=true after removing an owner's inactive memo and corresponding upload."""
     reload_storage()
-    directory, _ = _access(memo_id, owner_token(x_keeper_owner), owner_only=True)
+    owner = owner_token(x_keeper_owner)
+    directory, metadata = _access(memo_id, owner)
+    if metadata.get("showcase"):
+        raise HTTPException(status_code=403, detail="Showcase memos cannot be deleted")
+    if not owns(metadata, owner):
+        raise HTTPException(status_code=404, detail="Memo not found")
     status = directory / "status.json"
     if status.exists() and _read_json(status)["state"] in ("queued", "running"):
         raise HTTPException(status_code=409, detail="Wait for processing to finish before deleting this memo")
@@ -244,6 +253,107 @@ def upload_memo(file: Annotated[UploadFile, File()], x_keeper_owner: Owner = Non
         commit_storage()
         raise HTTPException(status_code=500, detail="Cannot start memo processing") from exc
     return {"memo_id": memo_id}
+
+
+class MoveTake(BaseModel):
+    """An owner-requested section change with stable take identity."""
+
+    section: Literal["verse", "chorus", "bridge", "intro", "outro", "hook", "pre-chorus", "unsorted"]
+
+
+class CanvasSection(BaseModel):
+    """A named arrangement interval in seconds."""
+
+    name: str = Field(min_length=1, max_length=80)
+    start: FiniteFloat = Field(ge=0)
+    end: FiniteFloat = Field(gt=0)
+
+    @model_validator(mode="after")
+    def ordered(self) -> "CanvasSection":
+        """Return a section whose end follows its start."""
+        if self.end <= self.start:
+            raise ValueError("Section end must follow its start")
+        return self
+
+
+class CanvasClip(BaseModel):
+    """A stable take reference placed at a canvas time and vertical lane."""
+
+    take_id: str
+    start: FiniteFloat = Field(ge=0, le=86400)
+    lane: int = Field(ge=0, le=99)
+
+
+class CanvasDocument(BaseModel):
+    """A bounded arrangement independent of source memo length."""
+
+    sections: list[CanvasSection] = Field(default_factory=list, max_length=500)
+    clips: list[CanvasClip] = Field(default_factory=list, max_length=2000)
+
+
+def _save_artifact(directory: Path, filename: str, value: Any) -> None:
+    """Return None after atomically replacing an edited memo artifact."""
+    temporary = directory / (filename + ".tmp")
+    temporary.write_text(json.dumps(value, indent=2, allow_nan=False), encoding="utf-8")
+    temporary.replace(directory / filename)
+    commit_storage()
+
+
+@app.patch("/api/memos/{memo_id}/takes/{take_id}")
+def move_take(memo_id: str, take_id: str, change: MoveTake, x_keeper_owner: Owner = None) -> dict:
+    """Return the song map after moving a stable take and renumbering section variants."""
+    reload_storage()
+    directory, _ = _access(memo_id, owner_token(x_keeper_owner), owner_only=True)
+    songmap = _read_json(directory / "songmap.json")
+    take = next((take for takes in songmap["sections"].values() for take in takes if take["id"] == take_id), None)
+    if take is None:
+        raise HTTPException(404, "Take not found")
+    for section in songmap["sections"]:
+        songmap["sections"][section] = [row for row in songmap["sections"][section] if row["id"] != take_id]
+    take["section"] = change.section
+    songmap["sections"].setdefault(change.section, []).append(take)
+    for takes in songmap["sections"].values():
+        for index, row in enumerate(takes, 1):
+            row["variant"] = f"Take {index}"
+    _save_artifact(directory, "songmap.json", songmap)
+    return songmap
+
+
+@app.get("/api/memos/{memo_id}/canvas")
+def get_canvas(memo_id: str, x_keeper_owner: Owner = None) -> dict:
+    """Return an owner's saved arrangement or an empty canvas."""
+    reload_storage()
+    directory, _ = _access(memo_id, owner_token(x_keeper_owner), owner_only=True)
+    path = _within(directory, directory / "canvas.json")
+    return _read_json(path) if path.exists() else {"sections": [], "clips": []}
+
+
+@app.put("/api/memos/{memo_id}/canvas")
+def put_canvas(memo_id: str, canvas: CanvasDocument, x_keeper_owner: Owner = None) -> dict:
+    """Return a persisted owner arrangement after checking every referenced take exists."""
+    reload_storage()
+    directory, _ = _access(memo_id, owner_token(x_keeper_owner), owner_only=True)
+    songmap = _read_json(directory / "songmap.json")
+    ids = {take["id"] for takes in songmap["sections"].values() for take in takes}
+    if any(clip.take_id not in ids for clip in canvas.clips):
+        raise HTTPException(422, "Unknown canvas take")
+    value = canvas.model_dump()
+    _save_artifact(directory, "canvas.json", value)
+    return value
+
+
+@app.get("/api/memos/{memo_id}/recording")
+def recording(memo_id: str, x_keeper_owner: Owner = None) -> FileResponse:
+    """Return the authorized original audio for shared recording playback."""
+    reload_storage()
+    directory, _ = _access(memo_id, owner_token(x_keeper_owner))
+    manifest = directory / "upload.json"
+    if not manifest.exists():
+        raise HTTPException(404, "Original recording unavailable")
+    source = _within(settings.uploads_root, settings.uploads_root / _read_json(manifest)["filename"])
+    if not source.is_file():
+        raise HTTPException(404, "Original recording unavailable")
+    return FileResponse(source)
 
 
 app.mount("/", StaticFiles(directory=settings.static_root, html=True), name="static")

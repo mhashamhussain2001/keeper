@@ -1262,3 +1262,150 @@ per version, so variation in AST/API/network time does not establish a general
 throughput improvement. Cold queue time includes the startup warmup.
 README documents both flags and the worker hook. git diff --check passed.
 No commit was requested or made; existing committed work was preserved.
+
+
+## 2026-11-02 — Keeper UI redesign from supplied dark/light Figma screenshots
+
+- Read AGENTS.md and private/prompts/codex_prompt_ui_redesign.md. Used the
+  Figma design-to-code, mobile-native, and Modal skills. Figma design tools were
+  not exposed in this session, so used the explicitly allowed screenshots and
+  exact supplied tokens. Inspected both reference PNGs and rendered outputs.
+  Pipeline logic, frame/trim thresholds, source recordings, and cached model
+  scores were not changed. No AST/Spark inference or new real memo uploads.
+- Added the 248px sidebar, title/meta header, Recording card, 360px Takes card,
+  Canvas card, and 76px bottom transport. Added dark-default persisted theme,
+  all supplied CSS tokens, section colors, and locally served Figtree/Geist Mono
+  from Google Fonts. No runtime JavaScript framework or npm dependencies added.
+  Font hosting is local so both browser tests and deployed UI avoid external
+  font requests. UI/dev files: style.css, fonts.css/fonts/, redesign.js,
+  ui_helpers.js; audio.js extends the existing engine. Existing iOS AudioSession
+  and silent-media-loop hook was retained verbatim in index.html.
+- One KeeperPlayer handles recording, take previews, and arrangements. Added
+  direct source/offset playback and cropped/silent queue segments for canvas
+  overlap resolution. All play labels, buttons, recording/canvas playheads and
+  transport progress render from its state. Recording waveform seeks and plays;
+  changing sources stops the previous source. Existing gesture-time resume,
+  silent-buffer unlock, interruption handling, and single-clip HTML fallback
+  remain covered by the previous Node audio/iOS regressions.
+- Recording uses the memo's 800 peaks, section bands/labels, speech dots,
+  ruler, playhead, zoom and horizontal scrolling. Show detail applies the existing
+  visual-only 1.5s smoothing helper. Takes filter by section, show auto-numbered
+  section names and durations, offer heard-text hover/tap tooltips, file unlabeled
+  takes, and collapse rejected takes. Renaming/deleting memos and upload/status
+  polling were preserved; processing time/counts were removed from the header.
+- Canvas supports native take drag/drop, touch-handle drops, arbitrary time/lane
+  placement, pointer clip movement, selection and Delete/Backspace/removal button,
+  add/rename/reorder/resize sections, zoom/scroll, and automatic owner persistence.
+  Play through uses source slices in one audio context; smallest lane number wins
+  overlaps, insertion order breaks ties, and uncovered time is silent.
+- Backend: owner-only PATCH take filing, owner-only GET/PUT canvas, strict enum,
+  finite-time/span validation and existing-take reference validation. Files are
+  written via temporary files and atomic replacement; ownership stays concealed
+  as 404. Take IDs and clip paths remain stable so saved arrangements survive
+  filing, while section variants renumber. Added an authorized original-recording
+  GET endpoint (owners or showcase readers), necessary for recording playback.
+  It checks the existing upload manifest/path and serves the original file.
+  Legacy memos lacking an original return 404 for recording playback; take clips
+  remain playable. Memo listing adds duration_s from existing region artifacts.
+- Below 900px: top bar/dropdown, vertically stacked cards, fixed safe-area
+  transport, no horizontal page overflow at 390x844. Includes focus rings,
+  real buttons/ARIA labels, Space transport shortcut, reduced-motion rules,
+  touch-safe font sizes and scrolling. Actual iPhone/Safari hardware testing
+  remains a manual check; Chromium emulation does not verify silent-switch policy.
+- Added keep_warm=0 to modal_app.py and wired it only to the existing GPU
+  worker's min_containers. README documents setting 1 and redeploying for a
+  demo, then resetting to 0 to avoid idle GPU billing. Existing T4/volume/secret,
+  startup hook, concurrency, scoring and processing behavior otherwise retained.
+- Added owner/edit validation tests and six Playwright tests: theme persistence,
+  shared recording/take playback, filters and filing, drag/drop canvas persistence,
+  play-through sequence advancement, desktop/mobile screenshots and overflow,
+  and custom section rename/resize plus clip deletion. Browser tests generate
+  local PCM audio, seed a local server, stub processing, and block external page
+  requests. No AST/Spark/network services. Playwright gets a function-scoped
+  runtime to avoid leaving its greenlet event loop active during the existing
+  asyncio.Runner API tests. The old Node DOM tests were migrated to current pure
+  UI helpers; real UI behavior is tested in Chromium. Existing audio/iOS tests
+  remain in the full suite. A recording-playback wait allows up to 20s for full
+  fixture decode, without weakening the playback assertions.
+- Full suite: .venv\Scripts\python.exe -m pytest -q --browser chromium:
+  **227 passed, 1 skipped**, with existing decoder warnings. Skip is local CUDA.
+  Earlier complete suite before adding the final section-edit test passed 226/1
+  in 55.92s. Screenshot-only check also passed after spacing/scroll-rail changes.
+  git diff --check passed. Browser dev requirements pin the already-installed
+  pytest-playwright 0.10.0 and playwright 1.64.1; runtime requirements unchanged.
+- Saved and personally inspected outputs/ui_screens/desktop_dark.png and
+  desktop_light.png at 1440x900, and mobile.png at 390x844 (full-page capture).
+  Compared desktop_dark.png with private/design/keeper_dark.png and fixed take
+  density, card/column geometry, scroll rails, typography, theme tokens and
+  populated the fixture's arrangement via the actual Canvas API for comparison.
+  Screenshots depict real fixture content/current playback state, not a static
+  copy of the reference image. Reference screenshots were never used as assets.
+- Redeployed with .venv\Scripts\python.exe -X utf8 -m modal deploy modal_app.py
+  at https://mhashamhussain2001--keeper-web.us-east.modal.run. Final deployed
+  assets/response and keep_warm=0 verified. No commits requested or made.
+- Not implemented: optional browser OfflineAudioContext Canvas WAV export;
+  its Export button stays hidden. Exact Figma-node measurement unavailable
+  because Figma tools were not exposed; used provided PNGs/tokens as authorized.
+
+Implementation choices not specified in the prompt:
+1. Stable take IDs/clip filenames survive filing; persisted variants are Take N,
+   while displayed names are section plus index. Other section variants are
+   renumbered on filing too. New sections start at the latest section end and
+   last 16s; custom section names use the Ideas color as a safe fallback.
+2. Section drag reorder packs sections contiguously in their new order. Clips
+   keep their absolute time positions; resizing does not push neighboring clips
+   or sections. New canvas documents are empty, and minimum viewport length is
+   120s, growing beyond the last section/clip with 15s margin. No musical snapping.
+3. Clips use 62px vertical lanes, limited to lane indices 0-99. PUT limits are
+   500 section blocks and 2,000 clips; starts are finite and nonnegative. Clip
+   starts are capped at 24h. Section names are limited to 80 characters.
+4. Canvas playback ends at the final clip rather than extending through empty
+   section-only tails. Sections are arrangement guides, independent of lanes.
+   Lower lane wins overlaps; insertion order resolves equal-lane ties.
+5. Showcase recordings/takes play read-only; their owner-only canvas endpoint
+   stays private and the visitor canvas is empty/non-editable. No public editing
+   or anonymous arrangement persistence. Save requests are serialized, taking
+   a snapshot of memo ID and canvas data to avoid rapid-write reordering.
+6. Zoom ranges from Fit to 16x, with 1.4x button steps; Ctrl+wheel and touch pinch
+   also zoom. Prev/next move between takes, or seek recording by ten seconds.
+   Loop repeats the active source/arrangement. Original files stream through an
+   authenticated API endpoint so Web Audio can decode without exposing storage.
+7. Fonts are vendored for offline reliability. Browser tools are development-only
+   requirements. Retained the legacy app.js file unused, while the new page
+   loads redesign.js. The new backend endpoint tests remain socket-free.
+
+
+## 2026-11-02 — Final blue/neutral palette and accessible delete confirmation
+
+- Applied all 17 final user-supplied dark/light token rows, including accent-soft,
+  and updated the table in private/prompts/codex_prompt_ui_redesign.md. Accent is
+  #1FB7F2, dark background #0E0F11, light background #F7F7F5. Accent-button text
+  uses on-accent. Theme-color follows the computed bg token. Static-source scan
+  found no F5750C, B84E06, 3A1E14, 03011F, F7F6FB or orange literals remaining.
+  No unmapped orange colors. The intentional danger control uses a separate
+  --danger=#C12E34 / --on-danger=#FFFFFF pair (contrast 5.66:1); backdrop derives
+  from bg. Recoloring did not change editor layout or player/pipeline behavior.
+- Replaced the inline delete prompt with a native in-app modal dialog: exact
+  title/body copy, role dialog, aria-modal, labelled/described content, Cancel
+  default focus, focus trapping, Esc/outside/Cancel dismissal, and return focus.
+  Pending deletion disables both buttons and says Deleting...; Escape cannot
+  interrupt a pending request. Errors remain announced inside the open dialog.
+  Shared playback stops before deleting. Success selects the following memo
+  (previous if last), or clears the editor to its empty state if none remain.
+  Showcase Delete is hidden even for owners, and backend DELETE returns 403
+  for showcase owners and public readers; private non-owner access stays 404.
+- Full suite: .venv\Scripts\python.exe -m pytest -q --browser chromium:
+  **235 passed, 1 skipped** in 95.38s, five existing decoder warnings. Additional
+  screenshot/dismissal checks after the final red contrast adjustment: 4 passed
+  in 25.10s. Browser tests verify every final token in both themes, theme metadata,
+  Cancel/Esc/outside dismissal and focus, busy controls, error recovery, Enter
+  confirmation, stopping playback, next/empty state, and showcase button hiding.
+  Backend tests verify showcase deletion returns 403 without removing files.
+- Regenerated and inspected outputs/ui_screens/desktop_dark.png,
+  desktop_light.png, mobile.png, delete_dark.png, delete_light.png and
+  delete_mobile.png. Retained editor geometry; verified both themes and phone
+  dialog layout, blue accents, dark accent text, and distinct red danger action.
+- Redeployed with the required venv's modal deploy modal_app.py (41.420s),
+  verified live index.html/style.css/redesign.js hashes match local files, and
+  left existing pipeline/thresholds/deployment settings intact. No live memo was
+  deleted during verification. No new dependencies. git diff --check passes.

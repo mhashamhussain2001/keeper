@@ -7,6 +7,7 @@ import modal
 
 ROOT = Path(__file__).resolve().parent
 app = modal.App("keeper")
+keep_warm = 0  # Set to 1 and redeploy during demo recording; reset to 0 afterwards.
 volume = modal.Volume.from_name("keeper-data", create_if_missing=True, version=2)
 
 
@@ -51,7 +52,7 @@ def benchmark_audio() -> dict:
 
 @app.cls(image=image, gpu="T4", cpu=2, memory=8192, timeout=1800,
               volumes={"/data": volume}, secrets=[modal.Secret.from_name("baseten")],
-              min_containers=0, max_containers=1, scaledown_window=30, include_source=False)
+              min_containers=keep_warm, max_containers=1, scaledown_window=30, include_source=False)
 class GPUWorker:
     """Process memos after optional once-per-container librosa initialization."""
 

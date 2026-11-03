@@ -95,6 +95,10 @@
       }
       return this.start(takes, offset, resumed);
     }
+    play(takes, offset = 0) {
+      const resumed = this.unlock();
+      return this.start(takes, offset, resumed);
+    }
     seek(seconds) {
       const resumed = this.unlock();
       const offset = Math.max(0, Math.min(this.total, seconds));
@@ -114,11 +118,19 @@
         });
         if (this.context.state !== "running") throw new Error("Audio context is interrupted");
         const buffers = await Promise.all(takes.map(async take => {
-          if (this.buffers.has(take.clip_url)) return this.buffers.get(take.clip_url);
-          const bytes = await this.fetchClip(take.clip_url);
-          const buffer = await this.context.decodeAudioData(bytes.slice(0));
-          if (generation === this.generation) this.buffers.set(take.clip_url, buffer);
-          return buffer;
+          if (take.silence) return this.context.createBuffer(1, Math.max(1, Math.round((take.end - take.start) * this.context.sampleRate)), this.context.sampleRate);
+          let buffer = this.buffers.get(take.clip_url);
+          if (!buffer) {
+            const bytes = await this.fetchClip(take.clip_url);
+            buffer = await this.context.decodeAudioData(bytes.slice(0));
+            if (generation === this.generation) this.buffers.set(take.clip_url, buffer);
+          }
+          if (take.slice_start === undefined) return buffer;
+          const begin = Math.round(take.slice_start * buffer.sampleRate);
+          const count = Math.max(1, Math.min(buffer.length - begin, Math.round((take.end - take.start) * buffer.sampleRate)));
+          const slice = this.context.createBuffer(buffer.numberOfChannels, count, buffer.sampleRate);
+          for (let channel = 0; channel < buffer.numberOfChannels; channel++) slice.copyToChannel(buffer.getChannelData(channel).subarray(begin, begin + count), channel);
+          return slice;
         }));
         if (generation !== this.generation) return;
         this.backend = "web"; this.lengths = buffers.map(buffer => buffer.duration);

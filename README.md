@@ -1,4 +1,38 @@
 # Keeper
+
+The redesigned editor uses the supplied Keeper dark/light design tokens and
+locally served Google Fonts (Figtree and Geist Mono). Dark is the default; the
+theme button persists the browser's choice. Recording, take previews, and canvas
+playback share the existing gesture-unlocked audio engine and iOS silent-switch
+handling. The recording streams the authorized original upload; legacy memos
+without that upload report that recording playback is unavailable.
+
+Owners can file takes, and arrange stable take references on a free canvas.
+Canvas sections can be added, renamed by double-click, reordered by drag, and
+resized at the right edge. Drag a take onto any time/lane; drag clips to move
+them, and use their remove button or Delete/Backspace to remove a selected clip.
+Changes save to canvas.json. Overlapping clips play the smallest lane number;
+ties use insertion order. Gaps play silence. Canvas WAV export is not implemented,
+so its control is hidden. Showcase memos support playback; editing stays owner-only.
+
+Run browser tests with the project's venv after installing the development tools:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+.\.venv\Scripts\python.exe -m playwright install chromium
+.\.venv\Scripts\python.exe -m pytest --browser chromium
+```
+
+Tests generate local audio, seed a local server, block external browser requests,
+and write desktop dark/light and mobile screenshots under outputs/ui_screens/.
+They exercise actual Web Audio playback. iPhone hardware behavior still needs a
+real-device check; Chromium emulation verifies layout, not Safari audio policy.
+
+For demo recording, set `keep_warm = 1` near the top of modal_app.py and redeploy
+with `.venv\Scripts\python.exe -m modal deploy modal_app.py`. This keeps one T4
+worker warm and incurs idle GPU charges. Set it back to `0` and redeploy after
+the demo. Its default remains `0`.
+
 Finds musical takes buried in long songwriting voice memos and files them into a song map, using the labels the writer speaks after each take. Activity labels are music, speech, and silence; unclaimed music goes into the separate unlabeled section.
 Built for the Meta Global AI Developer Hackathon (Oct 26 to Nov 4, 2026). Work in progress.
 

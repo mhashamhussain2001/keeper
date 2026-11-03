@@ -1,171 +1,22 @@
 <!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="color-scheme" content="light dark">
-  <meta name="theme-color" content="#f5f3ed" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#191c19" media="(prefers-color-scheme: dark)">
-  <title>Keeper · Your song map</title>
-  <style>
-    :root { color-scheme: light dark; --bg:#f5f3ed; --panel:#fffefa; --ink:#263329; --muted:#697267;
-      --line:#dcded3; --accent:#315c42; --soft:#e6eddf; --music:#91ad84; --speech:#d7af77; --silence:#dde0d5;
-      --danger:#ac3d32; font:15px/1.5 system-ui,sans-serif; }
-    * { box-sizing:border-box; }
-    body { margin:0; background:var(--bg); color:var(--ink); }
-    button,select { font:inherit; color:inherit; border:1px solid var(--line); border-radius:7px; background:var(--panel); }
-    button { padding:10px 15px; cursor:pointer; min-height:44px; touch-action:manipulation; }
-    button:disabled { opacity:.45; cursor:default; }
-    @media (hover: hover) and (pointer: fine) { button:not(:disabled):hover { border-color:var(--accent); } }
-    button.primary { background:var(--accent); color:var(--panel); border-color:var(--accent); }
-    :focus-visible { outline:3px solid var(--speech); outline-offset:4px; }
-    header { border-bottom:1px solid var(--line); }
-    .header-inner,main,.player-inner { max-width:1360px; margin:auto; padding:24px 40px; }
-    .header-inner { display:flex; align-items:center; gap:28px; }
-    .brand { display:flex; align-items:center; gap:10px; font-size:23px; letter-spacing:-1px; font-weight:650; margin:0; }
-    .mark { width:23px; height:26px; border-left:6px solid var(--accent); border-right:6px solid var(--accent); transform:skewY(-12deg); }
-    .tagline { color:var(--muted); margin:0; font-size:13px; }
-    .memo-controls { margin-left:auto; display:flex; align-items:center; gap:10px; }
-    select { min-height:44px; max-width:300px; padding:8px 30px 8px 12px; }
-    main { padding-top:34px; padding-bottom:calc(230px + env(safe-area-inset-bottom, 0px)); }
-    .eyebrow { color:var(--muted); text-transform:uppercase; letter-spacing:.12em; font-size:11px; font-weight:650; margin:0 0 7px; }
-    h1 { font:normal 36px/1.2 Georgia,serif; margin:0; letter-spacing:-1px; overflow-wrap:anywhere; }
-    input,select { font-size:16px; }
-    [hidden] { display:none !important; }
-    .player { padding-bottom:env(safe-area-inset-bottom, 0px); }
-    .player-inner { flex-wrap:wrap; gap:10px; }
-    .player-progress { width:100%; display:flex; align-items:center; gap:12px; }
-    #seek { flex:1; min-width:0; min-height:30px; accent-color:var(--accent); touch-action:manipulation; }
-    #ios-hint { width:100%; margin:0; }
-    #queue-description { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    #rename-input { font:inherit; font-size:16px; padding:8px; max-width:100%; }
-    #memo-actions { margin:8px 0; }
-    #stage-breakdown { display:grid; grid-template-columns:auto auto; gap:3px 16px; max-width:400px; }
-    #stage-breakdown dd { margin:0; text-align:right; }
-    .header-inner { padding-top:calc(24px + env(safe-area-inset-top, 0px)); }
-    .heading-row { display:flex; justify-content:space-between; align-items:end; gap:20px; }
-    .summary { color:var(--muted); margin:0; font-variant-numeric:tabular-nums; }
-    #status { min-height:24px; margin:15px 0; color:var(--muted); }
-    #status.error { color:var(--danger); }
-    .processing-panel { padding:18px; margin:16px 0; border:1px solid var(--line); border-radius:12px; }
-    .processing-panel[hidden] { display:none; }
-    .processing-panel p { margin:6px 0; }
-    .take-heard { color:var(--muted); font-size:12px; margin:8px 0; }
-    .timeline-panel { padding:24px; background:var(--panel); border:1px solid var(--line); border-radius:12px; }
-    .panel-heading { display:flex; justify-content:space-between; gap:20px; align-items:center; }
-    h2 { font-size:15px; margin:0; font-weight:600; }
-    .legend { display:flex; gap:18px; font-size:12px; color:var(--muted); flex-wrap:wrap; }
-    .legend span { display:flex; align-items:center; gap:6px; }
-    .dot { width:8px; height:8px; border-radius:2px; display:inline-block; }
-    .music { background:var(--music); } .speech { background:var(--speech); } .silence { background:var(--silence); }
-    .timeline-scroll { overflow-x:auto; margin-top:12px; }
-    #timeline { width:100%; min-width:640px; display:block; }
-    .timeline-take { cursor:pointer; color:var(--muted); }
-    .timeline-take path { stroke:currentColor; stroke-width:1.5; fill:none; }
-    .timeline-take text { fill:currentColor; font:12px system-ui,sans-serif; }
-    .timeline-take.selected { color:var(--accent); }
-    .timeline-take.selected path { stroke-width:3; }
-    .timeline-take.playing { color:var(--accent); }
-    .timeline-take.playing text { font-weight:750; text-decoration:underline; }
-    .timeline-take.playing path { stroke-width:4; }
-    .map-heading { margin:32px 0 18px; }
-    .hint { font-size:13px; color:var(--muted); margin:5px 0 0; }
-    .song-map { display:grid; grid-template-columns:repeat(auto-fill,minmax(225px,1fr)); gap:18px; align-items:start; }
-    .section-title { display:flex; justify-content:space-between; text-transform:capitalize; margin:0 0 12px; font-size:14px; }
-    .section-count { color:var(--muted); font-weight:400; }
-    .take-card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:18px; margin-bottom:12px; }
-    .take-card.selected { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); }
-    .take-card.playing { background:var(--soft); box-shadow:inset 4px 0 var(--accent); }
-    .take-label { display:flex; align-items:center; gap:10px; cursor:pointer; font-weight:600; overflow-wrap:anywhere; }
-    input[type=checkbox] { accent-color:var(--accent); width:18px; height:18px; margin:0; flex-shrink:0; }
-    .order { margin-left:auto; font-size:11px; border-radius:4px; min-width:22px; text-align:center; background:var(--soft); color:var(--accent); }
-    .take-times { color:var(--muted); font-size:13px; margin:15px 0 5px; font-variant-numeric:tabular-nums; }
-    .take-footer { display:flex; justify-content:space-between; align-items:center; gap:8px; }
-    .take-duration { font-size:12px; color:var(--muted); }
-    .play-take { padding:5px 12px; min-height:36px; font-size:13px; }
-    .empty { padding:24px 0; color:var(--muted); }
-    .player { position:fixed; bottom:0; left:0; right:0; background:var(--panel); border-top:1px solid var(--line); }
-    .player-inner { display:flex; align-items:center; gap:12px; padding-top:18px; padding-bottom:18px; }
-    .queue { flex:1; min-width:0; }
-    .queue-title { font-size:13px; font-weight:600; margin:0; }
-    #queue-description { color:var(--muted); font-size:12px; margin:2px 0 0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    #playing-status { font-size:12px; color:var(--accent); min-height:18px; }
-    @media (prefers-color-scheme:dark) {
-      :root { --bg:#191c19; --panel:#222722; --ink:#e5e9df; --muted:#a0aa9a; --line:#3c443a;
-        --accent:#b4d09c; --soft:#303f2e; --music:#759565; --speech:#b78d57; --silence:#3c443a; --danger:#ffa99b; }
-    }
-    @media (max-width:699px) {
-      .header-inner,main,.player-inner { padding-left:20px; padding-right:20px; }
-      .header-inner { flex-wrap:wrap; gap:14px; padding-top:calc(18px + env(safe-area-inset-top, 0px)); padding-bottom:18px; }
-      .tagline { margin-left:auto; } .memo-controls { margin:0; width:100%; }
-      select { flex:1; min-width:0; max-width:none; font-size:16px; }
-      main { padding-bottom:calc(290px + env(safe-area-inset-bottom, 0px)); } h1 { font-size:29px; }
-      .heading-row { align-items:start; flex-direction:column; gap:8px; }
-      .timeline-panel { padding:16px; } .panel-heading { flex-wrap:wrap; gap:12px; }
-      .song-map { grid-template-columns:1fr; }
-      .player-inner { flex-wrap:wrap; gap:10px; } .queue { flex-basis:100%; }
-      #play-selected { flex:1; }
-    }
-  </style>
-</head>
-<body>
-  <header>
-    <div class="header-inner">
-      <p class="brand"><span class="mark" aria-hidden="true"></span>Keeper</p>
-      <p class="tagline">Room for the next idea.</p>
-      <div class="memo-controls">
-        <select id="memo-picker" aria-label="Choose a memo"><option value="">Loading memos…</option></select>
-        <button id="upload-button">↑ Upload memo</button>
-        <input id="upload-file" type="file" accept="audio/*,.m4a,.aif,.aiff" hidden>
-      </div>
-    </div>
-  </header>
-  <main>
-    <div class="heading-row">
-      <div><p class="eyebrow">Your working session</p><h1 id="memo-title">A place for your takes.</h1>
-      <details><summary id="processed-time"></summary><dl id="stage-breakdown"></dl></details>
-      <div id="memo-actions" hidden><button id="rename">Rename</button> <button id="delete">Delete</button></div>
-      <form id="rename-form" hidden><label>Memo title <input id="rename-input" maxlength="120" required></label> <button type="submit">Save</button> <button type="button" id="rename-cancel">Cancel</button></form>
-      <div id="delete-confirm" hidden role="group" aria-label="Confirm deletion"><p>Delete this memo and its audio permanently?</p><button id="delete-yes">Delete memo</button> <button id="delete-cancel">Cancel</button></div>
-      </div>
-      <p id="memo-summary" class="summary"></p>
-    </div>
-    <p id="privacy-hint" class="hint"></p>
-    <p id="status" role="status" aria-live="polite">Loading your memos…</p>
-    <aside id="processing-panel" class="processing-panel" hidden aria-label="Memo processing">
-      <strong id="processing-name">Processing memo</strong>
-      <p id="processing-stage" role="status" aria-live="polite">Uploading audio</p>
-      <p><span id="processing-elapsed" role="timer" aria-live="off">0:00</span> elapsed</p>
-    </aside>
-    <section class="timeline-panel" aria-labelledby="timeline-heading">
-      <div class="panel-heading">
-        <h2 id="timeline-heading">The whole memo</h2>
-        <label><input id="show-detail" type="checkbox"> Show detail</label>
-        <div id="activity-legend" class="legend" aria-label="Activity colors" hidden>
-          <span><i class="dot music"></i>Music</span><span><i class="dot speech"></i>Speech</span><span><i class="dot silence"></i>Silence</span>
-        </div>
-      </div>
-      <div class="timeline-scroll"><svg id="timeline" viewBox="0 0 1000 150" role="group" aria-label="Memo timeline"></svg></div>
-    </section>
-    <div class="map-heading"><h2>Your song map</h2><p class="hint">Select takes in the order you want to hear them.</p></div>
-    <div id="song-map" class="song-map"><p class="empty">Choose a memo or upload a recording to get started.</p></div>
-  </main>
-  <footer class="player" aria-label="Take player">
-    <div class="player-inner">
-      <div class="queue">
-        <p id="queue-title" class="queue-title">Listen to your ideas together</p>
-        <p id="queue-description">Select at least two takes for back-to-back playback.</p>
-        <div id="playing-status" role="status" aria-live="polite"></div>
-      </div>
-      <button id="play-selected" class="primary" disabled>▶ Play selected back to back</button>
-      <button id="transport-play" disabled>Play</button>
-      <button id="stop" disabled>Stop</button>
-      <div class="player-progress"><span id="playback-time">0:00 / 0:00</span><input id="seek" type="range" min="0" max="1" step="0.01" value="0" disabled aria-label="Playback position"></div>
-      <p id="ios-hint" class="hint" hidden>No sound? Check your iPhone's silent switch.</p>
-    </div>
-  </footer>
-  <script src="/audio.js"></script>
-  <script id="ios-audio-session">
+<html lang="en" data-theme="dark"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="theme-color" content="#0E0F11"><title>Keeper · Your song map</title>
+<link rel="stylesheet" href="/fonts.css"><link rel="stylesheet" href="/style.css"></head><body>
+<aside class="sidebar"><div class="brand-row"><a class="brand" href="/">keeper<span></span></a><button id="theme" class="circle" aria-label="Switch to light theme">☾</button></div>
+<button id="upload" class="primary upload">↥ &nbsp; Upload memo</button><input id="file" type="file" accept="audio/*" hidden>
+<p class="eyebrow">MEMOS</p><nav id="memo-list" aria-label="Memos"></nav><select id="memo-picker" aria-label="Choose memo"></select></aside>
+<main><header class="memo-heading"><h1 id="memo-title">Your next song starts here</h1><p id="memo-meta">Upload a voice memo to find your ideas.</p><div id="memo-actions" hidden><button id="rename">Rename</button><button id="delete">Delete</button><input id="rename-input" aria-label="Memo title" hidden></div></header>
+<p id="status" role="status" hidden></p><p id="privacy-hint" hidden></p>
+<section class="card recording"><div class="card-heading"><button id="record-play" class="circle primary" aria-label="Play Recording">▶</button><h2>Recording</h2><span class="spacer"></span><span id="record-time" class="mono">0:00 / 0:00</span><label class="detail-label"><input id="show-detail" type="checkbox">Show detail</label><div class="zoom"><button data-zoom="record:-" aria-label="Zoom recording out">−</button><button data-zoom="record:fit">Fit</button><button data-zoom="record:+" aria-label="Zoom recording in">+</button></div></div>
+<div id="record-scroll" class="horizontal"><svg id="timeline" role="img" aria-label="Recording waveform; click to play" tabindex="0"></svg></div></section>
+<div class="workspace"><section class="card takes"><div class="card-heading"><h2>Takes</h2><span id="take-count" class="muted"></span></div><div id="filters" class="filters" aria-label="Filter takes"></div><div id="take-list"></div></section>
+<section class="card canvas"><div class="card-heading"><div><h2>Canvas</h2><p class="subtitle">Arrange takes into a song and play it through like a demo.</p></div><span class="spacer"></span><div class="zoom"><button data-zoom="canvas:-" aria-label="Zoom canvas out">−</button><button data-zoom="canvas:fit">Fit</button><button data-zoom="canvas:+" aria-label="Zoom canvas in">+</button></div><button id="play-through" class="primary">▶ &nbsp; Play through</button></div><div id="canvas-scroll" class="horizontal"><div id="canvas-board" tabindex="0" aria-label="Song canvas"><div id="canvas-ruler"></div><div id="canvas-sections"></div><div id="canvas-clips"></div><div id="canvas-playhead" class="playhead" hidden></div></div></div></section></div>
+</main><footer class="transport"><div class="now"><div id="playing-status" aria-live="polite">Nothing playing</div><div id="playing-memo" class="muted"></div></div><div class="transport-center"><div class="transport-buttons"><button id="loop" class="icon" aria-label="Loop playback" aria-pressed="false">⇄</button><button id="prev" class="icon" aria-label="Previous">Ⅰ◀</button><button id="transport-play" class="circle large" aria-label="Play">▶</button><button id="next" class="icon" aria-label="Next">▶Ⅰ</button><button id="stop" class="icon" aria-label="Stop">↓</button></div><div class="progress"><span id="elapsed" class="mono">0:00</span><input id="seek" aria-label="Playback position" type="range" min="0" max="1" value="0" step=".01"><span id="total" class="mono">0:00</span></div></div><button id="export" hidden>↓ Export</button><p id="ios-hint" hidden>No sound? Check your iPhone's silent switch.</p></footer>
+<dialog id="delete-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-title" aria-describedby="delete-body">
+<h2 id="delete-title">Delete this memo?</h2><p id="delete-body"></p><p id="delete-error" role="alert" hidden></p>
+<div class="dialog-actions"><button id="cancel-delete" autofocus>Cancel</button><button id="confirm-delete" class="danger">Delete</button></div></dialog>
+<script src="/audio.js"></script><script id="ios-audio-session">
     "use strict";
     (() => {
       const prototype = window.KeeperPlayer.prototype;
@@ -237,7 +88,4 @@
         refreshHint(); return result;
       };
     })();
-  </script>
-  <script src="/app.js"></script>
-</body>
-</html>
+  </script><script src="/ui_helpers.js"></script><script src="/redesign.js"></script></body></html>
