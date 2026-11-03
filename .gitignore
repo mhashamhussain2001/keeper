@@ -230,3 +230,5 @@ outputs/
 private/
 AGENTS.md
 AGENTS.md
+
+.agents/
