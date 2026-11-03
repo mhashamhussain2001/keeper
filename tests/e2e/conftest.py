@@ -61,7 +61,8 @@ def editor_url(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
     sf.write(uploads / "fixture.wav", audio, 16000)
     (memo / "upload.json").write_text(json.dumps({"filename":"fixture.wav"}))
     (memo / "songmap.json").write_text(json.dumps({"source_file":"fixture.wav","sections":sections,"parser":"mock"}))
-    (memo / "regions.json").write_text(json.dumps({"regions":[{"start":0,"end":375,"kind":"music"},{"start":375,"end":376,"kind":"speech"}]}))
+    (memo / "regions.json").write_text(json.dumps({"regions":[{"start":0,"end":39,"kind":"music"},{"start":39,"end":41,"kind":"speech"},{"start":41,"end":375,"kind":"music"},{"start":375,"end":376,"kind":"speech"}]}))
+    (memo / "spark_cache.json").write_text(json.dumps({"fixture-none":{"start":39,"end":41,"parsed":{"heard":"Just thinking about the next line","intent":"none","section":None,"target":"previous","confidence":.91}},"fixture-file":{"start":375,"end":376,"parsed":{"heard":"That last one, chorus B","intent":"file","section":"chorus","target":"previous","confidence":.96}}}))
     (memo / "peaks.json").write_text(json.dumps({"peaks":peaks.tolist()}))
     for memo_id, name, created, showcase in [("second-memo", "Another memo", "2026-10-31T20:00:00Z", False),
                                               ("showcase-memo", "Showcase memo", "2026-10-30T20:00:00Z", True)]:
@@ -74,21 +75,25 @@ def editor_url(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
     env = {**os.environ,"KEEPER_OUTPUTS_DIR":str(folder / "outputs"),"KEEPER_UPLOADS_DIR":str(uploads)}
     # Model/network construction is disabled in the server subprocess, including future upload tests.
     code = "import uvicorn,app.server as s; s.start_processing=lambda memo_id: None; uvicorn.run(s.app,host='127.0.0.1',port="+str(port)+",log_level='error')"
-    process = subprocess.Popen([str(root / ".venv/Scripts/python.exe"),"-c",code],cwd=root,env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+    server_log = (folder / "server.log").open("w", encoding="utf-8")
+    process = subprocess.Popen([str(root / ".venv/Scripts/python.exe"),"-c",code],cwd=root,env=env,stdout=server_log,stderr=subprocess.STDOUT)
     try:
-        deadline=time.monotonic()+30
+        deadline=time.monotonic()+60
         while time.monotonic()<deadline:
+            if process.poll() is not None:
+                raise RuntimeError("Local editor server exited: " + (folder / "server.log").read_text(encoding="utf-8"))
             try:
                 with socket.create_connection(("127.0.0.1",port),timeout=.3):
                     break
             except OSError:
                 time.sleep(.1)
         else:
-            raise RuntimeError("Local editor server did not start")
+            raise RuntimeError("Local editor server did not start: " + (folder / "server.log").read_text(encoding="utf-8"))
         yield f"http://127.0.0.1:{port}"
     finally:
         process.terminate()
         process.wait(timeout=10)
+        server_log.close()
 
 
 @pytest.fixture()

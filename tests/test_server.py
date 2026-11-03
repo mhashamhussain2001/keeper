@@ -104,6 +104,31 @@ def test_memo_list_ignores_incomplete_outputs(memo: Path) -> None:
     assert [row["id"] for row in request("GET", "/api/memos").json()] == ["demo"]
 
 
+def test_detail_exposes_saved_commands_without_cache_internals(memo: Path) -> None:
+    """Return None after checking command analysis is read-only and protected by memo ownership."""
+    (memo / "regions.json").write_text(json.dumps({"regions": [
+        {"start": 0, "end": .1, "kind": "music"}, {"start": .1, "end": .2, "kind": "speech"}]}))
+    cache = json.dumps({"secret-cache-key": {"start": .1, "end": .2,
+        "parsed": {"heard": "Chorus", "intent": "file", "section": "chorus", "target": "previous", "confidence": .99},
+        "attempts": [{"raw_content": "internal"}]}})
+    (memo / "spark_cache.json").write_text(cache)
+    response = request("GET", "/api/memos/demo")
+    assert response.status == 200
+    assert response.json()["analysis"]["commands"][0]["heard"] == "Chorus"
+    assert b"secret-cache-key" not in response.body and b"internal" not in response.body
+    assert (memo / "spark_cache.json").read_text() == cache
+    assert request("GET", "/api/memos/demo", owner=OWNER_B).status == 404
+
+
+def test_older_memo_without_regions_still_opens(memo: Path) -> None:
+    """Return None after checking absent analysis artifacts do not break listing or playback duration."""
+    (memo / "regions.json").unlink()
+    assert request("GET", "/api/memos").json()[0]["duration_s"] == .1
+    detail = request("GET", "/api/memos/demo").json()
+    assert detail["regions"] == [] and detail["analysis"] == {"commands": []}
+    assert detail["duration_s"] == .1
+
+
 def test_missing_outputs_list_is_empty(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Return None after checking a new installation lists no memos without creating storage."""
     monkeypatch.setattr(server, "settings", server.Settings(outputs_root=tmp_path / "absent"))
@@ -121,7 +146,7 @@ def test_memo_detail_normalizes_clip_paths(memo: Path, absolute: bool) -> None:
     response = request("GET", "/api/memos/demo")
     assert response.status == 200
     detail = response.json()
-    assert set(detail) == {"songmap", "regions", "duration_s", "meta", "peaks"}
+    assert set(detail) == {"songmap", "regions", "duration_s", "meta", "peaks", "analysis"}
     assert detail["duration_s"] == 0.2
     assert detail["regions"][0]["kind"] == "music"
     take = detail["songmap"]["sections"]["chorus"][0]

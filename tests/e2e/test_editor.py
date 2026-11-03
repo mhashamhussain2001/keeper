@@ -34,7 +34,8 @@ def test_final_palette_tokens(editor: Page) -> None:
 def test_delete_dismiss_keeps_memo(editor: Page, action: str) -> None:
     """Return None after checking dismissal, initial focus, trapping, and return focus without deletion."""
     editor.locator(".memo-heading").hover()
-    editor.locator("#delete").click()
+    editor.locator("#memo-more").click()
+    editor.get_by_role("menuitem",name="Delete memo...",exact=True).click()
     dialog=editor.get_by_role("dialog",name="Delete this memo?")
     expect(dialog).to_be_visible()
     expect(editor.locator("#cancel-delete")).to_be_focused()
@@ -57,7 +58,7 @@ def test_delete_dismiss_keeps_memo(editor: Page, action: str) -> None:
     else:
         editor.mouse.click(5,5)
     expect(dialog).not_to_be_visible()
-    expect(editor.locator("#delete")).to_be_focused()
+    expect(editor.locator("#memo-more")).to_be_focused()
     expect(editor.locator("#memo-title")).to_have_text("Late night piano session")
 
 
@@ -66,7 +67,8 @@ def test_delete_stops_playback_and_selects_next(editor: Page) -> None:
     editor.get_by_role("button",name="Play Chorus 1",exact=True).click()
     expect(editor.get_by_role("button",name="Pause Chorus 1",exact=True)).to_be_visible()
     editor.locator(".memo-heading").hover()
-    editor.locator("#delete").click()
+    editor.locator("#memo-more").click()
+    editor.get_by_role("menuitem",name="Delete memo...",exact=True).click()
     editor.locator("#confirm-delete").focus()
     editor.keyboard.press("Enter")
     expect(editor.locator("#memo-title")).to_have_text("Another memo")
@@ -78,7 +80,7 @@ def test_showcase_has_no_delete(editor: Page) -> None:
     """Return None after checking even an owned showcase memo has no delete control."""
     editor.locator('[data-memo="showcase-memo"]').click()
     expect(editor.locator("#memo-title")).to_have_text("Showcase memo")
-    expect(editor.locator("#delete")).to_be_hidden()
+    expect(editor.locator("#memo-more")).to_be_hidden()
 
 
 def test_delete_pending_and_error_stays_open(editor: Page) -> None:
@@ -86,7 +88,8 @@ def test_delete_pending_and_error_stays_open(editor: Page) -> None:
     pending=[]
     editor.route("**/api/memos/fixture-memo",lambda route: pending.append(route) if route.request.method=="DELETE" else route.continue_())
     editor.locator(".memo-heading").hover()
-    editor.locator("#delete").click()
+    editor.locator("#memo-more").click()
+    editor.get_by_role("menuitem",name="Delete memo...",exact=True).click()
     editor.locator("#confirm-delete").click()
     expect(editor.locator("#cancel-delete")).to_be_disabled()
     expect(editor.locator("#confirm-delete")).to_be_disabled()
@@ -103,7 +106,8 @@ def test_delete_last_memo_shows_empty_state(editor: Page) -> None:
     """Return None after checking a successful deletion with no remaining visible memos clears the editor."""
     editor.route("**/api/memos",lambda route: route.fulfill(json=[]))
     editor.locator(".memo-heading").hover()
-    editor.locator("#delete").click()
+    editor.locator("#memo-more").click()
+    editor.get_by_role("menuitem",name="Delete memo...",exact=True).click()
     editor.locator("#confirm-delete").click()
     expect(editor.locator("#memo-title")).to_have_text("Your next song starts here")
     expect(editor.locator(".take-row")).to_have_count(0)

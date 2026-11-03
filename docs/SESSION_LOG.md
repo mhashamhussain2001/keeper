@@ -1434,3 +1434,33 @@ Implementation choices not specified in the prompt:
   mutations. Canvas mixed WAV export remains unavailable; the transport download
   supports the active recording/take and disables for Canvas. Real iOS/touch
   hardware checks remain manual. No other requested feature left unimplemented.
+
+## 2026-11-03 — UI fixes round 3
+
+- Replaced memo Rename/Delete controls with one accessible actions menu and inline
+  title editing (Enter/blur save, Escape cancels); showcases hide the menu. Delete
+  keeps its confirmation dialog and returns focus to the new menu button.
+- Recording labels use measured font widths, a second row only when needed, and
+  abbreviations with full-name tooltips/aria labels. All 14 fixture labels remain
+  visible without collisions at 390px, 1024px and 1440px, at fit and zoom.
+- Added persisted Show analysis: saved region lane, legend, take boundaries,
+  command pins including hollow talking pins, and hover/focus detail cards. The
+  read-only analysis field projects existing Spark cache entries matching saved
+  speech regions; filed takes match saved heard text, including chained commands.
+  Cache internals are not exposed. Older memos hide analysis and can open without
+  regions.json, using saved upload duration or take endpoints as a fallback.
+- Canvas clips draw sliced existing memo peaks with one canvas per clip, one
+  animation-frame redraw, readable name chips and accent played portions. Verified
+  nonempty waveform pixels, drawing 50 clips, and repainting via the theme button;
+  waveforms use --text at 55% opacity in both themes. No new audio decoding.
+- Full suite: 255 passed, 1 CUDA skip, five existing decoder warnings, 217.85s.
+  Final visual follow-up: 8 passed, then 3 passed after the theme repaint fix.
+  Earlier local server startup timeouts were resolved with a 60s fixture allowance
+  and captured startup logs; the clean full run had no failures or setup errors.
+- Regenerated and inspected outputs/ui_screens/{desktop_dark,desktop_light,
+  mobile,sidebar_collapsed,section_menu,analysis_on,analysis_on_light,
+  canvas_waveforms}.png. Redeployed with the venv's modal deploy modal_app.py
+  (final deployment 39.515s); all eight live UI asset hashes match local files.
+  git diff --check passes. No pipeline, thresholds, dependencies, scores or live
+  memo data changed. Optional take-row waveforms were not added; real touch/iOS
+  hardware verification remains manual.

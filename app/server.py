@@ -21,6 +21,7 @@ from app.metadata import friendly_title, owner_token, owns, public_meta, read_me
 from app.processing import start_local_processing
 from app.storage import Settings, memo_directory, write_status
 from app.uploads import AUDIO_EXTENSIONS, save_upload, validate_audio
+from app.analysis_view import command_analysis
 
 
 settings = Settings()
@@ -93,6 +94,20 @@ def _completed(directory: Path) -> bool:
     return (directory / "songmap.json").is_file() and (not status.exists() or _read_json(status)["state"] == "done")
 
 
+def _timeline(directory: Path) -> tuple[list[dict[str, Any]], float]:
+    """Return saved regions and duration, retaining older memos that have no region artifact."""
+    path = _within(directory, directory / "regions.json")
+    value = _read_json(path) if path.exists() else []
+    regions = value["regions"] if isinstance(value, dict) else value
+    if regions:
+        return regions, max(float(region["end"]) for region in regions)
+    upload_path = _within(directory, directory / "upload.json")
+    upload = _read_json(upload_path) if upload_path.exists() else {}
+    songmap = _read_json(_within(directory, directory / "songmap.json"))
+    duration = upload.get("duration_s") or max((take["end"] for takes in songmap["sections"].values() for take in takes), default=0.0)
+    return regions, float(duration)
+
+
 @app.get("/api/memos")
 def list_memos(x_keeper_owner: Owner = None) -> list[dict[str, Any]]:
     """Return caller-owned completed memos newest first, followed by public showcase memos."""
@@ -105,9 +120,7 @@ def list_memos(x_keeper_owner: Owner = None) -> list[dict[str, Any]]:
         try:
             directory, metadata = _access(directory.name, owner)
             if _completed(directory):
-                region_data = _read_json(directory / "regions.json")
-                regions = region_data["regions"] if isinstance(region_data, dict) else region_data
-                duration = max((float(region["end"]) for region in regions), default=0.0)
+                _, duration = _timeline(directory)
                 memos.append({"id": directory.name, **public_meta(metadata, owner), "duration_s": duration})
         except HTTPException:
             continue
@@ -125,8 +138,7 @@ def memo_detail(memo_id: str, x_keeper_owner: Owner = None) -> dict[str, Any]:
     songmap = _read_json(_within(directory, directory / "songmap.json"))
     names_path = _within(directory, directory / "take_names.json")
     names = _read_json(names_path) if names_path.exists() else {}
-    region_data = _read_json(_within(directory, directory / "regions.json"))
-    regions = region_data["regions"] if isinstance(region_data, dict) else region_data
+    regions, duration = _timeline(directory)
     for takes in songmap["sections"].values():
         for take in takes:
             if take["id"] in names:
@@ -141,8 +153,8 @@ def memo_detail(memo_id: str, x_keeper_owner: Owner = None) -> dict[str, Any]:
             take["clip_url"] = f"/api/memos/{quote(memo_id, safe='')}/clips/{quote(relative, safe='/')}"
     peaks_path = _within(directory, directory / "peaks.json")
     peaks = _read_json(peaks_path)["peaks"] if peaks_path.exists() else [0.0] * 800
-    duration = max((float(region["end"]) for region in regions), default=0.0)
-    return {"songmap": songmap, "regions": regions, "duration_s": duration, "peaks": peaks, "meta": public_meta(metadata, owner)}
+    return {"songmap": songmap, "regions": regions, "duration_s": duration, "peaks": peaks, "meta": public_meta(metadata, owner),
+            "analysis": command_analysis(directory, songmap, regions)}
 
 
 @app.get("/api/memos/{memo_id}/status")
