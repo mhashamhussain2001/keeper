@@ -123,10 +123,14 @@ def memo_detail(memo_id: str, x_keeper_owner: Owner = None) -> dict[str, Any]:
     if not _completed(directory):
         raise HTTPException(status_code=404, detail="Memo not found")
     songmap = _read_json(_within(directory, directory / "songmap.json"))
+    names_path = _within(directory, directory / "take_names.json")
+    names = _read_json(names_path) if names_path.exists() else {}
     region_data = _read_json(_within(directory, directory / "regions.json"))
     regions = region_data["regions"] if isinstance(region_data, dict) else region_data
     for takes in songmap["sections"].values():
         for take in takes:
+            if take["id"] in names:
+                take["custom_name"] = names[take["id"]]
             take["clip_url"] = None
             if not take.get("clip_path"):
                 continue
@@ -257,8 +261,10 @@ def upload_memo(file: Annotated[UploadFile, File()], x_keeper_owner: Owner = Non
 
 class MoveTake(BaseModel):
     """An owner-requested section change with stable take identity."""
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    section: Literal["verse", "chorus", "bridge", "intro", "outro", "hook", "pre-chorus", "unsorted"]
+    section: str | None = Field(default=None, min_length=1, max_length=80)
+    name: str | None = Field(default=None, min_length=1, max_length=120, pattern=r"^[^\x00-\x1f\x7f]+$")
 
 
 class CanvasSection(BaseModel):
@@ -267,6 +273,7 @@ class CanvasSection(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     start: FiniteFloat = Field(ge=0)
     end: FiniteFloat = Field(gt=0)
+    type: Literal["intro", "verse", "pre-chorus", "chorus", "bridge", "hook", "outro", "custom"] | None = None
 
     @model_validator(mode="after")
     def ordered(self) -> "CanvasSection":
@@ -303,15 +310,25 @@ def _save_artifact(directory: Path, filename: str, value: Any) -> None:
 def move_take(memo_id: str, take_id: str, change: MoveTake, x_keeper_owner: Owner = None) -> dict:
     """Return the song map after moving a stable take and renumbering section variants."""
     reload_storage()
-    directory, _ = _access(memo_id, owner_token(x_keeper_owner), owner_only=True)
+    directory, metadata = _access(memo_id, owner_token(x_keeper_owner), owner_only=True)
+    if metadata.get("showcase"):
+        raise HTTPException(403, "Showcase memos are read-only")
     songmap = _read_json(directory / "songmap.json")
+    if change.section is not None and change.section not in {"verse", "chorus", "bridge", "intro", "outro", "hook", "pre-chorus", "unsorted", "unlabeled", *songmap["sections"]}:
+        raise HTTPException(422, "Unknown section")
     take = next((take for takes in songmap["sections"].values() for take in takes if take["id"] == take_id), None)
     if take is None:
         raise HTTPException(404, "Take not found")
-    for section in songmap["sections"]:
-        songmap["sections"][section] = [row for row in songmap["sections"][section] if row["id"] != take_id]
-    take["section"] = change.section
-    songmap["sections"].setdefault(change.section, []).append(take)
+    if change.section is not None and change.section != take["section"]:
+        for section in songmap["sections"]:
+            songmap["sections"][section] = [row for row in songmap["sections"][section] if row["id"] != take_id]
+        take["section"] = change.section
+        songmap["sections"].setdefault(change.section, []).append(take)
+    if change.name is not None:
+        names_path = directory / "take_names.json"
+        names = _read_json(names_path) if names_path.exists() else {}
+        names[take_id] = change.name.strip()
+        _save_artifact(directory, "take_names.json", names)
     for takes in songmap["sections"].values():
         for index, row in enumerate(takes, 1):
             row["variant"] = f"Take {index}"
@@ -332,12 +349,14 @@ def get_canvas(memo_id: str, x_keeper_owner: Owner = None) -> dict:
 def put_canvas(memo_id: str, canvas: CanvasDocument, x_keeper_owner: Owner = None) -> dict:
     """Return a persisted owner arrangement after checking every referenced take exists."""
     reload_storage()
-    directory, _ = _access(memo_id, owner_token(x_keeper_owner), owner_only=True)
+    directory, metadata = _access(memo_id, owner_token(x_keeper_owner), owner_only=True)
+    if metadata.get("showcase"):
+        raise HTTPException(403, "Showcase memos are read-only")
     songmap = _read_json(directory / "songmap.json")
     ids = {take["id"] for takes in songmap["sections"].values() for take in takes}
     if any(clip.take_id not in ids for clip in canvas.clips):
         raise HTTPException(422, "Unknown canvas take")
-    value = canvas.model_dump()
+    value = canvas.model_dump(exclude_none=True)
     _save_artifact(directory, "canvas.json", value)
     return value
 

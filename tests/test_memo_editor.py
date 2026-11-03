@@ -29,3 +29,16 @@ def test_canvas_owner_validation_and_roundtrip(memo: Path) -> None:
     assert request("PUT","/api/memos/demo/canvas",json.dumps(value).encode(),"application/json").status==422
     value["sections"][0]["end"]=-1
     assert request("PUT","/api/memos/demo/canvas",json.dumps(value).encode(),"application/json").status==422
+
+
+def test_custom_name_survives_filing_and_showcase_is_readonly(memo: Path) -> None:
+    """Return None after checking custom UI names survive moves and showcase writes are forbidden."""
+    assert request("PATCH","/api/memos/demo/takes/chorus-a",b'{"name":"Quiet ending"}',"application/json").status==200
+    assert request("PATCH","/api/memos/demo/takes/chorus-a",b'{"section":"intro"}',"application/json").status==200
+    detail=request("GET","/api/memos/demo").json()
+    assert detail["songmap"]["sections"]["intro"][0]["custom_name"]=="Quiet ending"
+    metadata=json.loads((memo/"meta.json").read_text())
+    metadata["showcase"]=True
+    (memo/"meta.json").write_text(json.dumps(metadata))
+    assert request("PATCH","/api/memos/demo/takes/chorus-a",b'{"section":"verse"}',"application/json").status==403
+    assert request("PUT","/api/memos/demo/canvas",b'{"sections":[],"clips":[]}',"application/json").status==403

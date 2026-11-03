@@ -127,7 +127,9 @@ def test_filters_and_file_to(editor: Page) -> None:
     editor.get_by_role("button",name="Bridge",exact=True).click()
     expect(editor.locator(".take-row")).to_have_count(1)
     editor.get_by_role("button",name="Unlabeled",exact=True).click()
-    editor.locator(".file-to").first.select_option("verse")
+    editor.get_by_role("button",name="Actions for Unlabeled 1",exact=True).click()
+    editor.get_by_role("menuitem",name="Move to Verse",exact=True).click()
+    editor.get_by_role("button",name="Verse",exact=True).click()
     expect(editor.get_by_role("button",name="Play Verse 2",exact=True)).to_be_visible()
 
 
@@ -168,6 +170,8 @@ def test_screenshots_and_mobile_overflow(editor: Page) -> None:
     editor.locator("#theme").click()
     editor.screenshot(path=str(folder/"desktop_light.png"))
     editor.set_viewport_size({"width":390,"height":844})
+    editor.wait_for_function("document.documentElement.scrollWidth<=window.innerWidth")
+    editor.evaluate("new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))")
     editor.screenshot(path=str(folder/"mobile.png"),full_page=True)
     assert editor.evaluate("document.documentElement.scrollWidth<=window.innerWidth")
 
@@ -175,10 +179,11 @@ def test_screenshots_and_mobile_overflow(editor: Page) -> None:
 def test_canvas_section_editing_and_clip_removal(editor: Page) -> None:
     """Return None after checking custom section rename/resize persistence and selected clip removal."""
     editor.locator("#add-section").click()
+    editor.get_by_role("menuitem",name="Verse",exact=True).click()
     block=editor.locator(".canvas-section").first
     block.dblclick()
-    block.locator("input").fill("Middle eight")
-    block.locator("input").press("Enter")
+    editor.locator("#name-dialog-input").fill("Middle eight")
+    editor.get_by_role("button",name="Save",exact=True).click()
     expect(block).to_contain_text("Middle eight")
     assert block.evaluate("n=>getComputedStyle(n).backgroundColor")!="rgba(0, 0, 0, 0)"
     handle=block.locator(".section-resize").bounding_box()

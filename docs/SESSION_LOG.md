@@ -1409,3 +1409,28 @@ Implementation choices not specified in the prompt:
   verified live index.html/style.css/redesign.js hashes match local files, and
   left existing pipeline/thresholds/deployment settings intact. No live memo was
   deleted during verification. No new dependencies. git diff --check passes.
+
+
+## 2026-11-03 — Editor controls, canvas grid, and take filing
+
+- Implemented the single full-height zoom-aligned canvas grid, shared SVG icons,
+  contextual prev/next, accessible custom scrollbars, Canvas playhead/ruler seek,
+  cursor-anchored ctrl/meta wheel zoom, persisted 56px sidebar rail, data-driven
+  section chips/groups, keyboard section/type menus, one dismissible tooltip,
+  Move to/Rename menus, grip filing, and Undo without stopping playback.
+- Font audit changed the empty subtitle to Figtree 400/15px/text-muted, numeric
+  take counts to Geist Mono, and the missing-duration label to numeric 0:00;
+  every sentence/control label remains Figtree. Empty controls have disabled and
+  aria-disabled states. Final color tokens and the single-player rule preserved.
+- Custom take names live in take_names.json; optional Canvas section types live
+  in canvas.json. UI metadata endpoints accept canonical/existing section names;
+  owned showcases also reject filing/canvas writes. No pipeline or score changes.
+- Full suite: 245 passed, 1 skipped in 221.26s (five existing decoder warnings).
+  Additional final viewport/menu/screenshot checks passed. Captured and inspected
+  outputs/ui_screens/{desktop_dark,desktop_light,mobile,sidebar_collapsed,section_menu}.png.
+  Mobile capture waits for ResizeObserver refit before asserting 390px width.
+- Deployed via the required venv's modal deploy modal_app.py; live final asset
+  hashes match local. git diff --check passes. No new dependencies or live memo
+  mutations. Canvas mixed WAV export remains unavailable; the transport download
+  supports the active recording/take and disables for Canvas. Real iOS/touch
+  hardware checks remain manual. No other requested feature left unimplemented.

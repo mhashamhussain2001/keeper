@@ -46,7 +46,8 @@ def editor_url(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
     (memo / "meta.json").write_text(json.dumps(metadata))
     sections = {}
     spans = [("verse",22,38),("chorus",60,82),("chorus",114,120),("chorus",348,372),
-             ("bridge",294,304),("unsorted",260,278),("unlabeled",130,150),("unlabeled",161,187),("unlabeled",310,320)]
+             ("bridge",294,304),("unsorted",260,278),("unlabeled",130,150),("unlabeled",161,187),("unlabeled",310,320),
+             ("intro",0,4),("pre-chorus",42,45),("hook",190,194),("outro",373,375),("coda",198,200)]
     audio = np.zeros(376*16000, dtype=np.float32)
     peaks = np.random.default_rng(1).uniform(.02,.1,800)
     for section,start,end in spans:
