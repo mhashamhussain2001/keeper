@@ -116,9 +116,9 @@ def test_single_take_native_wav_and_stems_download(editor: Page) -> None:
         editor.get_by_role("menuitem", name="All takes (ZIP)", exact=True).click()
     assert downloaded.value.suggested_filename.endswith(" - stems.zip")
     with ZipFile(downloaded.value.path()) as archive:
-        assert "songmap.txt" in archive.namelist()
-        assert "Make" not in archive.read("songmap.txt").decode("utf-8")
-        assert "That last one, chorus B" in archive.read("songmap.txt").decode("utf-8")
+        assert "song_canvas.txt" in archive.namelist()
+        assert "Make" not in archive.read("song_canvas.txt").decode("utf-8")
+        assert "That last one, chorus B" in archive.read("song_canvas.txt").decode("utf-8")
         assert len([name for name in archive.namelist() if name.endswith(".wav")]) == 14
 
 

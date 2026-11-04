@@ -47,8 +47,8 @@ def test_stems_names_songmap_native_rate_channels_and_fades(memo: Path) -> None:
     assert response.status == 200
     assert "My%20memo%20-%20stems.zip" in response.headers["content-disposition"]
     with ZipFile(io.BytesIO(response.body)) as archive:
-        assert archive.namelist() == ["01 chorus Big chorus.wav", "02 verse Soft_verse.wav", "songmap.txt"]
-        songmap = archive.read("songmap.txt").decode("utf-8")
+        assert archive.namelist() == ["01 chorus Big chorus.wav", "02 verse Soft_verse.wav", "song_canvas.txt"]
+        songmap = archive.read("song_canvas.txt").decode("utf-8")
         assert "Name: Soft/verse" in songmap and "Section: verse" in songmap
         assert "0.100000" in songmap and "0.300000" in songmap and "Make this the verse" in songmap
         samples, rate = sf.read(io.BytesIO(archive.read("02 verse Soft_verse.wav")), dtype="float32", always_2d=True)
@@ -68,8 +68,8 @@ def test_stems_rejected_flag_and_source_order(memo: Path) -> None:
     response = request("GET", "/api/memos/demo/export/stems?include_rejected=1")
     assert response.status == 200
     with ZipFile(io.BytesIO(response.body)) as archive:
-        assert archive.namelist() == ["01 verse Soft_verse.wav", "02 chorus Big chorus.wav", "rejected/03 rejected Rejected 1.wav", "songmap.txt"]
-        assert "Section: rejected" in archive.read("songmap.txt").decode("utf-8")
+        assert archive.namelist() == ["01 verse Soft_verse.wav", "02 chorus Big chorus.wav", "rejected/03 rejected Rejected 1.wav", "song_canvas.txt"]
+        assert "Section: rejected" in archive.read("song_canvas.txt").decode("utf-8")
 
 
 def test_stems_size_guard_before_cutting(memo: Path, monkeypatch: pytest.MonkeyPatch) -> None:

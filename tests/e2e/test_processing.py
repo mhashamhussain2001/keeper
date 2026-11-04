@@ -47,13 +47,14 @@ def test_scripted_upload_poll_log_and_screenshots(editor: Page) -> None:
     editor.route("**/api/memos", lambda route: route.fulfill(json={"memo_id": "fixture-memo"}, status=201)
                  if route.request.method == "POST" else route.continue_())
     polls: list[float] = []
+    allow_done = False
 
     def status(route: Any) -> None:
         """Return None after advancing the scripted job only when the client polls."""
         from time import monotonic
 
         polls.append(monotonic())
-        done = len(polls) >= 3
+        done = len(polls) >= 3 and allow_done
         route.fulfill(json={"state": "done" if done else "running", "events": events if done else events[:-3]})
 
     editor.route("**/api/memos/fixture-memo/status", status)
@@ -75,6 +76,7 @@ def test_scripted_upload_poll_log_and_screenshots(editor: Page) -> None:
     assert editor.locator(".listening-pin").count() >= 1
     folder = Path("outputs/ui_screens"); folder.mkdir(parents=True, exist_ok=True)
     editor.screenshot(path=str(folder / "processing_mid_log.png"))
+    allow_done = True
     editor.wait_for_function("KeeperProcessing.active?.phase==='chopping'")
     editor.wait_for_function("[...document.querySelectorAll('.chop-clone')].some(n=>n.getAnimations().some(a=>a.currentTime>a.effect.getTiming().delay+100&&a.currentTime<a.effect.getTiming().delay+460))")
     editor.screenshot(path=str(folder / "processing_mid_reveal.png"))

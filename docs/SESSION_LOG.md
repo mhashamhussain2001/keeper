@@ -1857,3 +1857,47 @@ done    10 takes · 5 sections · 78.08 s
   read/write matrix passes locally. Real phone memory behavior remains unmeasured.
   No private memo was published or deleted during live checks, no personal audio
   was uploaded for this task, and no new dependencies were added.
+
+
+### 2026-11-03 ? Song canvas title and Keeper favicon
+
+- Changed the browser title to `Keeper ? Your song canvas`, README display wording,
+  and stems export heading/ZIP member to `song_canvas.txt`. Stored artifact names,
+  API fields and pipeline behavior remain compatible.
+- Added a reproducible `scripts/make_favicon.py`: Figtree 700 lowercase k outline,
+  dark rounded square and blue accent; standalone SVG, three PNG sizes, opaque
+  180px Apple icon, and combined 16/32/48 ICO. No full Figtree TTF/OTF was found
+  in the repo or site-packages; bundled `fonts/font-3.woff2` contains the glyph.
+  Local generation tools installed: fontTools 4.68.0, Brotli 1.2.1 (WOFF2 decoding),
+  Pillow 13.0.0 (ICO packaging); existing Playwright renders PNGs. No runtime
+  dependency changes. Chromium was not reinstalled.
+- Added anonymous title/icon regression coverage; icons use the audited public
+  static mount with `public, max-age=86400`. ICO tests accept Windows and Linux
+  MIME variants. Playwright opened SVG and PNG at device scale 2 and saved
+  `private/design/favicon_check.png`; the k is centered and legible at 16px.
+- Redeployed successfully to the unchanged URL
+  https://mhashamhussain2001--keeper-web.us-east.modal.run . Live title verified;
+  all six icons returned 200, correct content types/cache headers, and exact local
+  bytes. Initial Windows console encoding failure resolved by UTF-8 environment.
+- Wording audit (`rg -ni 'song ?map' app README.md`, equivalent to requested grep):
+  remaining matches below are internal compatibility identifiers only.
+  - `app/analysis_view.py` lines 8, 20: function argument and section access retain the internal schema.
+  - `app/metadata.py` lines 83: stored songmap.json detection retains existing memo compatibility.
+  - `app/processing.py` lines 57: stored songmap.json cleanup retains existing memo compatibility.
+  - `app/server.py` lines 135, 147, 148, 183, 187, 201, 202, 216, 397, 398, 400, 404, 405, 407, 413, 417, 418, 437, 438, 479, 482: stored filenames, local variables and API response fields retain compatibility.
+  - `app/static/editor.js` lines 52: data.songmap accesses retain the API schema.
+  - `app/static/redesign.js` lines 44: data.songmap accesses retain the API schema.
+  - `app/stems.py` lines 25, 29, 58, 60, 78: function arguments/local variables retain internal identifiers; ZIP filename is updated.
+- First full suite: 375 passed, 3 known skips, one failure in the existing
+  scripted-upload intermediate-frame test (1068.52s). Isolated rerun reproduced
+  the timing failure. The mock now waits for the intermediate assertions and
+  screenshot before allowing completion; application logic is unchanged.
+  Corrected test passed in isolation (31.36s). Final full rerun follows.
+- Final full suite: `.venv\Scripts\python.exe -m pytest -q --browser chromium
+  --tb=short`: **376 passed, 3 skipped, 3 warnings in 554.67s (9:14)**.
+  Skips remain the CUDA-only check and two local-ffmpeg M4A checks; warnings
+  are existing decoder deprecations. Transcript: outputs/favicon_full_suite_final.txt.
+  Private-strings guard and git diff --check pass. Commit requested; no push.
+- Commit could not be created: the session filesystem permissions expose `.git`
+  read-only, so git add/commit failed creating `.git/index.lock` with Permission
+  denied. Changes remain in the working tree; nothing was pushed.

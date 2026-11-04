@@ -28,6 +28,25 @@ OWNER_A = "11111111-1111-4111-8111-111111111111"
 OWNER_B = "22222222-2222-4222-8222-222222222222"
 
 
+def test_branding_and_public_icons() -> None:
+    """Return None after verifying the canvas title and anonymous icon responses."""
+    import re
+
+    response = request("GET", "/", owner=None)
+    html = response.body.decode("utf-8")
+    assert "<title>Keeper · Your song canvas</title>" in html
+    targets = re.findall(r'<link rel="(?:icon|alternate icon|apple-touch-icon)" href="([^"]+)"', html)
+    assert set(targets) == {"/favicon.svg", "/favicon-32.png", "/favicon.ico", "/apple-touch-icon.png"}
+    for path in targets + ["/favicon-192.png", "/favicon-512.png"]:
+        assert (server.settings.static_root / path.lstrip("/")).is_file()
+        icon = request("GET", path, owner=None)
+        assert icon.status == 200
+        expected = "image/svg+xml" if path.endswith(".svg") else "image/vnd.microsoft.icon" if path.endswith(".ico") else "image/png"
+        accepted = {"image/x-icon", "image/vnd.microsoft.icon"} if path.endswith(".ico") else {expected}
+        assert icon.headers["content-type"].split(";")[0] in accepted
+        assert icon.headers["cache-control"] == "public, max-age=86400"
+
+
 @pytest.fixture(scope="module", autouse=True)
 def api_runtime() -> Iterator[None]:
     """Yield an ASGI runtime initialized before per-test network blocking."""
@@ -277,7 +296,7 @@ def test_original_filename_stays_private_in_every_response(
         if path.endswith("/stems"):
             with ZipFile(io.BytesIO(reply.body)) as archive:
                 assert "Example Street" not in str(archive.namelist())
-                assert b"Example Street" not in archive.read("songmap.txt")
+                assert b"Example Street" not in archive.read("song_canvas.txt")
     if legacy_showcase:
         for path in paths[:3]:
             assert b"Example Street" not in request("GET", path, owner=None).body

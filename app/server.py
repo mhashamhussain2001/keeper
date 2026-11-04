@@ -57,6 +57,9 @@ async def private_api_responses(request: Request, call_next: Callable[[Request],
             response = JSONResponse({"detail": "This request could not be completed."}, status_code=500)
     response.headers["X-Robots-Tag"] = "noindex, nofollow"
     response.headers["Referrer-Policy"] = "no-referrer"
+    if request.url.path in {"/favicon.svg", "/favicon-32.png", "/favicon-192.png",
+                            "/favicon-512.png", "/favicon.ico", "/apple-touch-icon.png"}:
+        response.headers["Cache-Control"] = "public, max-age=86400"
     if request.url.path.startswith("/api/"):
         response.headers["Cache-Control"] = "private, no-store"
         response.headers["Vary"] = "X-Keeper-Owner"
@@ -386,7 +389,7 @@ def _save_artifact(directory: Path, filename: str, value: Any) -> None:
 
 @app.patch("/api/memos/{memo_id}/takes/{take_id}")
 def move_take(memo_id: str, take_id: str, change: MoveTake, x_keeper_owner: Owner = None) -> dict:
-    """Return the song map after moving a stable take and renumbering section variants."""
+    """Return the song canvas after moving a stable take and renumbering section variants."""
     reload_storage()
     directory, metadata = _access(memo_id, owner_token(x_keeper_owner), owner_only=True)
     if metadata.get("showcase"):

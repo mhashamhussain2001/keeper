@@ -52,7 +52,7 @@ with `.venv\Scripts\python.exe -m modal deploy modal_app.py`. This keeps one T4
 worker warm and incurs idle GPU charges. Set it back to `0` and redeploy after
 the demo. Its default remains `0`.
 
-Finds musical takes buried in long songwriting voice memos and files them into a song map, using the labels the writer speaks after each take. Activity labels are music, speech, and silence; unclaimed music goes into the separate unlabeled section.
+Finds musical takes buried in long songwriting voice memos and files them into a song canvas, using the labels the writer speaks after each take. Activity labels are music, speech, and silence; unclaimed music goes into the separate unlabeled section.
 Built for the Meta Global AI Developer Hackathon (Oct 26 to Nov 4, 2026). Work in progress.
 
 Run the offline tests (including the real memo's numeric fixture):
@@ -219,14 +219,14 @@ Implementation choices beyond the skeleton spec:
   successive starts use the previous buffer's full decoded duration, without added
   gaps or crossfades. Stop also cancels playback still waiting for decoding.
 - The SVG timeline scrolls horizontally below 640 px; take brackets use separate
-  lanes when labels overlap. The song map becomes one column below 700 px.
+  lanes when labels overlap. The song canvas becomes one column below 700 px.
   Unknown sections follow the requested section order. Colors follow the system
   light/dark preference. Brackets and checkboxes support keyboard selection.
 - Placeholder WAVs are mono 16 kHz PCM-16, with amplitude 0.035, frequencies
   220/275/330 Hz for the three chorus takes, and 10 ms edge fades. Clip lengths
   match take duration to the nearest audio sample. The optional real-audio export
   uses the existing export fades. Old unreferenced clips are left in place when
-  regenerating the demo; the new song map determines which clips the UI plays.
+  regenerating the demo; the new song canvas determines which clips the UI plays.
 - API tests send in-process ASGI requests, avoiding an extra HTTP test dependency.
   Windows event-loop wakeup sockets initialize before each test's network guard;
   actual API tests remain socket-free, and upload tests stub only the AST scorer.

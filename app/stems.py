@@ -41,7 +41,7 @@ def ordered_takes(songmap: dict[str, Any], names: dict[str, str], canvas: dict[s
 def build_stems(audio: sf.SoundFile, takes: list[dict[str, Any]]) -> BinaryIO:
     """Return a rewound temporary ZIP of faded PCM16 stems, rejecting totals above 500 MiB."""
     entries = []
-    lines = [f"Keeper song map — {audio.samplerate} Hz, {audio.channels} channel(s)", ""]
+    lines = [f"Keeper song canvas — {audio.samplerate} Hz, {audio.channels} channel(s)", ""]
     for index, take in enumerate(takes, 1):
         begin, end = round(take["start"] * audio.samplerate), round(take["end"] * audio.samplerate)
         if not 0 <= begin < end <= len(audio):
@@ -75,7 +75,7 @@ def build_stems(audio: sf.SoundFile, takes: list[dict[str, Any]]) -> BinaryIO:
                 wav = io.BytesIO()
                 sf.write(wav, samples, audio.samplerate, format="WAV", subtype="PCM_16")
                 zipped.writestr(filename, wav.getvalue())
-            zipped.writestr("songmap.txt", songmap)
+            zipped.writestr("song_canvas.txt", songmap)
         if archive.tell() > MAX_STEMS_BYTES:
             raise OverflowError("Stems export exceeds 500 MB")
         archive.seek(0)
