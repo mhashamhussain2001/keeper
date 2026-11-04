@@ -20,7 +20,7 @@ import app.server as server
 import app.processing as processing
 import keeper.pipeline as pipeline
 from keeper.types import SongMap, Take
-from app.metadata import save_meta
+from app.metadata import owner_fingerprint, save_meta
 
 
 _runner: asyncio.Runner
@@ -346,7 +346,8 @@ def test_upload_rejects_fake_m4a(memo: Path, monkeypatch: pytest.MonkeyPatch, co
     monkeypatch.setattr(server, "start_processing", start)
     response = upload("fake.m4a", b"This is text, not audio.", content_type=content_type)
     assert response.status == 400
-    assert response.json()["detail"] == "Cannot decode this audio file; upload valid audio"
+    assert response.json()["detail"].startswith("Cannot read this audio file; upload valid audio")
+    assert "Up to 30 minutes and 150 MB" in response.json()["detail"]
     start.assert_not_called()
     assert not list(server.settings.uploads_root.iterdir())
 
@@ -451,9 +452,9 @@ def test_upload_validation(memo: Path, monkeypatch: pytest.MonkeyPatch, kind: st
     elif kind == "empty":
         content = b""
     elif kind == "size":
-        monkeypatch.setattr(uploads, "MAX_UPLOAD_BYTES", 100)
+        monkeypatch.setenv("KEEPER_MAX_UPLOAD_MB", str(100 / (1024 * 1024)))
     else:
-        monkeypatch.setattr(uploads, "MAX_AUDIO_SECONDS", 1.0)
+        monkeypatch.setenv("KEEPER_MAX_AUDIO_MINUTES", str(1 / 60))
     response = upload("bad.wav", content)
     assert response.status == 400 and isinstance(response.json()["detail"], str)
     start.assert_not_called()
@@ -550,7 +551,7 @@ def test_upload_records_local_title_private_owner_and_peaks(memo: Path, monkeypa
     response = upload("original.wav", audio.getvalue(), title)
     memo_id = response.json()["memo_id"]
     metadata = json.loads((memo.parent / memo_id / "meta.json").read_text())
-    assert metadata["owner"] == OWNER_A and metadata["title"] == title and metadata["original_filename"] == "original.wav"
+    assert metadata["owner"] == owner_fingerprint(OWNER_A) and metadata["title"] == title and metadata["original_filename"] == "original.wav"
     assert metadata["showcase"] is False and metadata["created_at"]
     detail = request("GET", f"/api/memos/{memo_id}").json()
     assert len(detail["peaks"]) == 800 and max(detail["peaks"]) > 0

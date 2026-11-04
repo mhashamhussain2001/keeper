@@ -175,6 +175,10 @@ def _run_pipeline(
     else:
         commands = {region.start: parse_region(audio, sr, region) for audio, sr, region in clips}
     parser_warnings = []
+    skipped = len(getattr(parser, "skipped_regions", ()))
+    if skipped:
+        parser_warnings.append(f"Speech command budget reached; {skipped} region(s) treated as none.")
+        reporter.emit("spark_limit", n_skipped=skipped, cap=parser.max_spark_calls)
     for region in speech:
         label = commands[region.start]
         if label.target == "next" and not config.support_target_next:

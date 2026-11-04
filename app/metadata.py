@@ -1,6 +1,8 @@
 """Memo ownership, friendly metadata, and non-destructive legacy migration."""
 
 import json
+import hashlib
+import hmac
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -12,7 +14,8 @@ from app.storage import Settings, memo_directory
 def owner_token(value: str | None) -> str | None:
     """Return a canonical UUID owner token or None for absent or invalid headers."""
     try:
-        return str(UUID(value)) if value else None
+        parsed = UUID(value) if value else None
+        return str(parsed) if parsed is not None and parsed.version == 4 else None
     except (ValueError, AttributeError):
         return None
 
@@ -24,8 +27,12 @@ def friendly_title(timestamp: datetime) -> str:
 
 def save_meta(directory: Path, metadata: dict[str, Any]) -> None:
     """Return None after atomically saving metadata without exposing its owner token."""
+    private = dict(metadata)
+    token = owner_token(private.get("owner"))
+    if token is not None:
+        private["owner"] = owner_fingerprint(token)
     temporary = directory / "meta.tmp"
-    temporary.write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
+    temporary.write_text(json.dumps(private, indent=2) + "\n", encoding="utf-8")
     temporary.replace(directory / "meta.json")
 
 
@@ -41,7 +48,19 @@ def read_meta(directory: Path) -> dict[str, Any]:
 
 def owns(metadata: dict[str, Any], owner: str | None) -> bool:
     """Return whether a nonempty caller token owns this memo."""
-    return owner is not None and metadata.get("owner") == owner
+    token = owner_token(owner)
+    stored = metadata.get("owner")
+    if token is None or not isinstance(stored, str):
+        return False
+    if len(stored) == 64 and all(character in "0123456789abcdef" for character in stored):
+        return hmac.compare_digest(stored, owner_fingerprint(token))
+    legacy = owner_token(stored)
+    return legacy is not None and hmac.compare_digest(legacy, token)
+
+
+def owner_fingerprint(token: str) -> str:
+    """Return the stable SHA-256 storage identity for a validated browser token."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def public_meta(metadata: dict[str, Any], owner: str | None) -> dict[str, Any]:

@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 from app.storage import Settings, memo_directory
 from app.event_status import EventStatus
 from app.waveform import write_peaks
+from app.spark_budget import WebLabelParser
 from keeper.config import KeeperConfig
 from keeper.labels import MockLabelParser, MuseSparkLabelParser
 from keeper.pipeline import run_pipeline
@@ -41,8 +42,8 @@ def process_memo(memo_id: str, settings: Settings, commit: Callable[[], None] | 
         status.metadata["peaks"] = json.loads((directory / "peaks.json").read_text(encoding="utf-8"))["peaks"]
 
         if parser_name == "spark":
-            parser = MuseSparkLabelParser(directory / "spark_cache.json", KeeperConfig().max_spark_calls,
-                                          prompt_v2=KeeperConfig().spark_prompt_v2)
+            parser = WebLabelParser(directory / "spark_cache.json", float(manifest["duration_s"]),
+                                    prompt_v2=KeeperConfig().spark_prompt_v2)
         else:
             mock = directory / "mock_labels.json"
             mock.write_text("{}\n", encoding="utf-8")
@@ -52,7 +53,7 @@ def process_memo(memo_id: str, settings: Settings, commit: Callable[[], None] | 
                      progress=status.progress, on_event=status.event)
         status.finish("done")
     except Exception as exc:
-        logger.exception("Processing failed for memo %s", memo_id)
+        logger.error("Processing failed for memo %s (%s)", memo_id, type(exc).__name__)
         (directory / "songmap.json").unlink(missing_ok=True)
         if not status.events or status.events[-1]["type"] != "failed":
             EventReporter(status.event).emit("failed", message=str(exc))

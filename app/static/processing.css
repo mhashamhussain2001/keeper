@@ -4,7 +4,7 @@
 .listening-label{font:400 12px Figtree,sans-serif;color:var(--text-muted);display:flex;align-items:center;gap:7px}
 .listening-entries{max-height:calc(100dvh - 440px);min-height:180px;overflow:auto;overscroll-behavior:contain;padding:8px 0 4px;scrollbar-width:thin}
 .listening-entry{padding:10px 0;border-bottom:1px solid var(--border)}
-.listening-voice{font:400 16px/1.45 Figtree,sans-serif;margin:0 0 5px;overflow-wrap:anywhere}
+.listening-voice,.listening-queue{font:400 16px/1.45 Figtree,sans-serif;margin:0 0 5px;overflow-wrap:anywhere}
 .listening-process{font:400 12px/1.65 'Geist Mono',monospace;color:var(--text-muted);margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
 .listening-progress{height:2px;margin-top:8px;background:var(--border);overflow:hidden}
 .listening-progress-fill{height:100%;background:var(--accent);transform-origin:left;transition:transform 180ms linear}

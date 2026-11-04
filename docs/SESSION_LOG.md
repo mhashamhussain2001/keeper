@@ -1748,3 +1748,112 @@ cut     Unlabeled 5  4:42–4:43  (1.3 s)
 10 takes, 5 sections. Your song's waiting.
 done    10 takes · 5 sections · 78.08 s
 ```
+
+
+## 2026-11-03 — Privacy, upload budgets and retention
+
+- Read AGENTS.md and the privacy-and-limits prompt. Added
+  tests/test_access_audit.py with an explicit method/path access table, including
+  static serving and local docs. Every route must be classified before shipping.
+  Events/replay share the status route; browser take/arrangement downloads depend
+  on protected recording/clip routes. Tests cover owner, other-browser, anonymous,
+  malformed identity, traversal and showcase access. Fixed private stems export
+  refusals to conceal existence with 404 and made showcase rename read-only.
+- Browser identities must be UUID v4. New metadata and quota entries store SHA-256
+  identities; constant-time comparisons retain access to legacy raw-token memos,
+  migrating their metadata on the next successful write. Upload/error logging
+  tests use ephemeral private markers and verify that no sensitive strings enter
+  logs. Uvicorn access logs are disabled; application failures log only error
+  classes and memo IDs. Removed the administrative benchmark result print.
+- Production docs/schema routes default off through Modal environment settings;
+  local docs remain enabled. Added noindex/nofollow and no-referrer headers to all
+  responses, private/no-store and nosniff on API responses, robots exclusion, and
+  same-origin-only API handling without wildcard CORS. Unexpected server errors
+  return a generic response with the same headers, without logging exception
+  contents. Public /api/config exposes only availability, upload limits and
+  retention days.
+- Upload defaults are now 30 minutes and 150 MiB, with the requested MB-labelled
+  limits message and frontend hint. All limits are environment configurable and
+  passed into Modal images. Admission measures duration using ffprobe metadata
+  when present, otherwise librosa.get_duration; no full admission decode. Partial,
+  invalid and quota-refused files are removed without deleting existing files.
+  The upload kill switch returns 503 and disables browser upload controls with
+  an explanation. Original-quality audio processing and classification thresholds
+  are unchanged.
+- Added a single-writer, lock-protected volume quota ledger with atomic writes:
+  five uploads and ninety audio minutes per browser per rolling 24 hours, one
+  queued/running memo per browser, and 240 globally reserved audio minutes per
+  rolling 24 hours. Reservations remain charged after memo deletion. Refusals
+  return 429, friendly explanations and Retry-After. Status exposes only the
+  number of earlier active jobs; the processing UI updates an actual queue
+  message. The web container remains limited to one ledger writer. Modal Volumes
+  do not support distributed file locking, so a multi-writer ledger was avoided:
+  https://modal.com/docs/guide/volumes#concurrent-modification .
+- The web-only Spark parser scales from forty calls through ten minutes by four
+  per additional minute, capped at 120. It selects speech chronologically, treats
+  over-budget regions as none, and records a warning plus a real event while
+  completing the memo. Retry-budget exhaustion has the same bounded fallback.
+  The CLI remains capped at forty. The T4 worker timeout is now 3600 seconds;
+  GPU type and container limits are unchanged.
+- Non-showcase retention defaults to fourteen days. Upload admission and memo
+  listing run a cursor-based sweep inspecting at most twenty candidate folders;
+  it removes expired output artifacts, cached exports and unshared uploaded
+  sources while guarding path boundaries and shared/showcase recordings.
+  scripts/purge_expired.py supports --dry-run and --modal for the deployed volume.
+  The live administrative dry run succeeded: zero expired memos in its bounded
+  batch, with no deletion. Added the configured browser-privacy line and a README
+  paragraph describing the actual per-browser token, Modal storage/GPU processing,
+  Baseten spoken-command processing, deletion and loss of access after clearing
+  browser data.
+- Added scripts/check_private_strings.py and tests/test_no_private_strings.py.
+  They check every tracked and untracked non-ignored file against the optional
+  local case-insensitive denylist and disclose only matched paths/line numbers.
+  The guard passes. Updated local AGENTS.md to require it before every push.
+  No denylist contents, browser identities, client filenames or transcripts were
+  added to this record or verification output. No dependencies added.
+- Browser memory finding: normal playback fetches the whole encoded original,
+  decodes it into a native-rate AudioBuffer and caches it by URL; the HTML audio
+  fallback uses a fully downloaded Blob. The engine does not stream originals.
+  Thirty minutes at 48 kHz requires 345,600,000 PCM bytes for mono (329.6 MiB) or
+  691,200,000 for stereo (659.2 MiB). Allowing another PCM working allocation plus
+  two maximum encoded copies yields a rough decode peak of 0.94/1.58 GiB. A
+  full-length export's original/render/channel/worker/WAV/Blob allocations can
+  approach 1.61/3.22 GiB before other browser overhead. These are allocation
+  estimates, not phone measurements; codec work and garbage collection vary.
+  Arrangement WAV is disabled for source memos over twenty minutes, with the
+  requested All takes ZIP tooltip and a programmatic guard. Raising the upload
+  limit to sixty minutes is unsafe for phone browsers with this engine; even
+  thirty-minute stereo playback cannot be guaranteed on low-memory hardware.
+  Calculations: outputs/privacy_limits_memory.json. Phone hardware unavailable.
+- Deployed with the required venv's modal deploy modal_app.py; Modal reported
+  54.645 seconds. All eighteen deployed HTML/CSS/JS assets match local hashes.
+  Fresh Chromium context: only public entries were visible, an existing private
+  memo returned 404, docs/redoc/schema returned 404, security headers and robots
+  rules passed, and direct storage-folder requests returned 404. Posted a
+  3,764-byte synthetic thirty-one-minute WAV through that fresh browser context;
+  it returned 400 with the exact limits message, admitted no job and required no
+  GPU/Baseten processing or personal audio. Zero browser errors. Evidence:
+  outputs/privacy_limits_live/report.json and oversized_rejected.png.
+- Live showcase limitation: no public showcase memo exists on the deployment.
+  The fresh browser list was therefore empty; its lack of private entries was
+  verified. Public showcase playback could not be checked against live data.
+  The local route audit verifies public showcase reads and rejects mutations,
+  including writes attempted by the owner. Existing visibility was unchanged.
+- The first full run had 374 passes, three existing skips and one new browser
+  test failure. The kill-switch test now waits for the initial memo load after
+  reloading, preventing that load from clearing its synthetic refusal notice.
+  The test passed in isolation before the final full rerun. No application change
+  was needed for that synchronization fix.
+
+- Final complete suite: .venv\Scripts\python.exe -m pytest -q --browser chromium
+  --tb=no — **375 passed, 3 skipped, 3 warnings in 399.28s (0:06:39)**. No failures or setup errors.
+  Skips are the existing CUDA-only check and two M4A checks requiring local
+  ffmpeg. The three decoder deprecation warnings are unchanged. Full transcript:
+  outputs/privacy_limits_full_suite_final.txt. The private-strings guard and
+  git diff --check both pass after the session record update.
+- All requested implementation, tests, deployment, synthetic live rejection and
+  session-record work is complete. The live fresh-browser list is empty because
+  no public showcase exists, so live showcase playback remains unverified; its
+  read/write matrix passes locally. Real phone memory behavior remains unmeasured.
+  No private memo was published or deleted during live checks, no personal audio
+  was uploaded for this task, and no new dependencies were added.

@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 import shutil
 import subprocess
 from collections.abc import Iterator
@@ -14,7 +15,7 @@ from typing import Literal
 from collections.abc import Awaitable, Callable
 
 from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
-from starlette.responses import Response
+from starlette.responses import Response, PlainTextResponse, JSONResponse
 from fastapi.responses import FileResponse, StreamingResponse
 from starlette.background import BackgroundTask
 from fastapi.staticfiles import StaticFiles
@@ -28,22 +29,53 @@ from app.analysis_view import command_analysis
 from app.native_audio import audio_format, open_original
 from app.stems import build_stems, ordered_takes, safe_filename
 from app.privacy import public_artifact
+from app.policy import policy
+from app.quotas import ADMISSION_LOCK, QuotaExceeded, queue_ahead, reserve_upload, release_reservation
+from app.retention import remove_memo_files, sweep_expired
 
 
 settings = Settings()
-app = FastAPI(title="Keeper")
+docs_enabled = os.environ.get("KEEPER_DOCS_ENABLED", "1").strip().lower() not in {"0", "false", "off"}
+app = FastAPI(title="Keeper", docs_url="/docs" if docs_enabled else None,
+              redoc_url="/redoc" if docs_enabled else None, openapi_url="/openapi.json" if docs_enabled else None)
 logger = logging.getLogger(__name__)
+logging.getLogger("uvicorn.access").disabled = True
 Owner = Annotated[str | None, Header(alias="X-Keeper-Owner")]
 
 
 @app.middleware("http")
 async def private_api_responses(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
     """Return API responses that cannot be cached or reused across browser-owner headers."""
-    response = await call_next(request)
+    origin = request.headers.get("origin")
+    if request.url.path.startswith("/api/") and origin and origin != f"{request.url.scheme}://{request.url.netloc}":
+        response = JSONResponse({"detail": "Use this app from its own website."}, status_code=400)
+    else:
+        try:
+            response = await call_next(request)
+        except Exception as exc:
+            logger.error("Request failed (%s)", type(exc).__name__)
+            response = JSONResponse({"detail": "This request could not be completed."}, status_code=500)
+    response.headers["X-Robots-Tag"] = "noindex, nofollow"
+    response.headers["Referrer-Policy"] = "no-referrer"
     if request.url.path.startswith("/api/"):
         response.headers["Cache-Control"] = "private, no-store"
         response.headers["Vary"] = "X-Keeper-Owner"
+        response.headers["X-Content-Type-Options"] = "nosniff"
     return response
+
+
+@app.get("/robots.txt", response_class=PlainTextResponse)
+def robots() -> str:
+    """Return a crawler directive excluding the entire application."""
+    return "User-agent: *\nDisallow: /\n"
+
+
+@app.get("/api/config")
+def public_config() -> dict[str, bool | float | int]:
+    """Return only public upload availability, size/duration limits and retention days."""
+    limits = policy()
+    return {"uploads_enabled": limits.uploads_enabled, "max_audio_minutes": limits.max_audio_minutes,
+            "max_upload_mb": limits.max_upload_mb, "retention_days": limits.retention_days}
 
 
 class RenameMemo(BaseModel):
@@ -117,7 +149,11 @@ def _timeline(directory: Path) -> tuple[list[dict[str, Any]], float]:
 @app.get("/api/memos")
 def list_memos(x_keeper_owner: Owner = None) -> list[dict[str, Any]]:
     """Return caller-owned completed memos newest first, followed by public showcase memos."""
-    reload_storage()
+    with ADMISSION_LOCK:
+        reload_storage()
+        sweep_expired(settings)
+        if settings.outputs_root.is_dir():
+            commit_storage()
     owner = owner_token(x_keeper_owner)
     memos = []
     if not settings.outputs_root.is_dir():
@@ -170,7 +206,10 @@ def memo_status(memo_id: str, x_keeper_owner: Owner = None) -> dict[str, Any]:
     directory, metadata = _access(memo_id, owner_token(x_keeper_owner))
     path = _within(directory, directory / "status.json")
     if path.is_file():
-        return public_artifact(_read_json(path), metadata.get("original_filename", ""))
+        status = public_artifact(_read_json(path), metadata.get("original_filename", ""))
+        if status.get("state") == "queued":
+            status["queue_ahead"] = queue_ahead(settings, memo_id)
+        return status
     if (directory / "songmap.json").is_file():
         return {"state": "done", "stage": "done", "error": None, "updated_at": None, "history": [], "events": []}
     raise HTTPException(status_code=404, detail="Memo not found")
@@ -195,6 +234,8 @@ def rename_memo(memo_id: str, change: RenameMemo, x_keeper_owner: Owner = None) 
     reload_storage()
     owner = owner_token(x_keeper_owner)
     directory, metadata = _access(memo_id, owner, owner_only=True)
+    if metadata.get("showcase"):
+        raise HTTPException(403, "Showcase memos are read-only")
     metadata["title"] = change.title
     save_meta(directory, metadata)
     commit_storage()
@@ -214,15 +255,9 @@ def delete_memo(memo_id: str, x_keeper_owner: Owner = None) -> dict[str, bool]:
     status = directory / "status.json"
     if status.exists() and _read_json(status)["state"] in ("queued", "running"):
         raise HTTPException(status_code=409, detail="Wait for processing to finish before deleting this memo")
-    upload = _within(directory, directory / "upload.json")
-    if upload.exists():
-        filename = _read_json(upload).get("filename", "")
-        source = _within(settings.uploads_root, settings.uploads_root / filename)
-        if source.name.startswith(memo_id + "."):
-            source.unlink(missing_ok=True)
-    directory = _within(settings.outputs_root, directory)
-    shutil.rmtree(directory)
-    commit_storage()
+    with ADMISSION_LOCK:
+        remove_memo_files(settings, directory)
+        commit_storage()
     return {"deleted": True}
 
 
@@ -230,7 +265,10 @@ def delete_memo(memo_id: str, x_keeper_owner: Owner = None) -> dict[str, bool]:
 def upload_memo(file: Annotated[UploadFile, File()], x_keeper_owner: Owner = None,
                 title: Annotated[str | None, Form()] = None) -> dict[str, str]:
     """Return a random queued ID after validating audio and recording browser ownership."""
-    reload_storage()
+    limits = policy()
+    if not limits.uploads_enabled:
+        file.file.close()
+        raise HTTPException(status_code=503, detail="Uploads are paused. You can still listen to the showcase memo.")
     owner = owner_token(x_keeper_owner)
     if owner is None:
         file.file.close()
@@ -251,29 +289,49 @@ def upload_memo(file: Annotated[UploadFile, File()], x_keeper_owner: Owner = Non
     memo_id = uuid4().hex
     destination = memo_directory(settings, memo_id)
     source = settings.uploads_root / f"{memo_id}{suffix}"
+    accepted = False
+    reserved = False
+    source_saved = False
+    directory_created = False
     try:
         settings.uploads_root.mkdir(parents=True, exist_ok=True)
-        save_upload(file.file, source)
+        save_upload(file.file, source, limits)
+        source_saved = True
         duration = validate_audio(source)
+        with ADMISSION_LOCK:
+            reload_storage()
+            sweep_expired(settings, limits)
+            reserve_upload(settings, owner, duration, memo_id, limits)
+            reserved = True
+            destination.mkdir(parents=True, exist_ok=False)
+            directory_created = True
+            now = datetime.now(timezone.utc)
+            save_meta(destination, {"title": title or friendly_title(now), "original_filename": filename,
+                                   "created_at": now.isoformat(), "owner": owner, "showcase": False})
+            (destination / "upload.json").write_text(json.dumps({"filename": source.name, "original_filename": filename,
+                                                                 "duration_s": duration}), encoding="utf-8")
+            write_status(destination, "queued", "queued")
+            commit_storage()
+            accepted = True
+    except QuotaExceeded as exc:
+        raise HTTPException(status_code=429, detail=str(exc), headers={"Retry-After": str(exc.retry_after)}) from None
     except ValueError as exc:
-        try:
-            source.unlink(missing_ok=True)
-        except OSError:
-            logger.warning("Cannot remove rejected upload while its decoder holds it open")
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     finally:
         file.file.close()
-    destination.mkdir(parents=True, exist_ok=False)
-    now = datetime.now(timezone.utc)
-    save_meta(destination, {"title": title or friendly_title(now), "original_filename": filename,
-                           "created_at": now.isoformat(), "owner": owner, "showcase": False})
-    (destination / "upload.json").write_text(json.dumps({"filename": source.name, "original_filename": filename, "duration_s": duration}), encoding="utf-8")
-    write_status(destination, "queued", "queued")
-    commit_storage()
+        if not accepted:
+            if source_saved:
+                source.unlink(missing_ok=True)
+            if reserved:
+                with ADMISSION_LOCK:
+                    release_reservation(settings, memo_id)
+                    if directory_created:
+                        remove_memo_files(settings, destination)
+                    commit_storage()
     try:
         start_processing(memo_id)
     except Exception as exc:
-        write_status(destination, "failed", "failed", f"Cannot start processing: {exc}")
+        write_status(destination, "failed", "failed", "Cannot start processing")
         commit_storage()
         raise HTTPException(status_code=500, detail="Cannot start memo processing") from exc
     return {"memo_id": memo_id}
@@ -352,6 +410,7 @@ def move_take(memo_id: str, take_id: str, change: MoveTake, x_keeper_owner: Owne
     for takes in songmap["sections"].values():
         for index, row in enumerate(takes, 1):
             row["variant"] = f"Take {index}"
+    save_meta(directory, metadata)
     _save_artifact(directory, "songmap.json", songmap)
     return public_artifact(songmap, metadata.get("original_filename", ""))
 
@@ -377,6 +436,7 @@ def put_canvas(memo_id: str, canvas: CanvasDocument, x_keeper_owner: Owner = Non
     if any(clip.take_id not in ids for clip in canvas.clips):
         raise HTTPException(422, "Unknown canvas take")
     value = canvas.model_dump(exclude_none=True)
+    save_meta(directory, metadata)
     _save_artifact(directory, "canvas.json", value)
     return value
 
@@ -404,16 +464,7 @@ def recording(memo_id: str, x_keeper_owner: Owner = None) -> FileResponse:
 def export_stems(memo_id: str, x_keeper_owner: Owner = None, include_rejected: bool = False) -> StreamingResponse:
     """Return an owner's bounded original-quality stems ZIP, allowing read-only showcase exports."""
     reload_storage()
-    # This download deliberately returns 403 for a known memo with a different browser token.
-    try:
-        directory = memo_directory(settings, memo_id)
-        metadata = read_meta(directory)
-    except (ValueError, OSError):
-        raise HTTPException(404, "Memo not found") from None
-    if not directory.is_dir():
-        raise HTTPException(404, "Memo not found")
-    if not owns(metadata, owner_token(x_keeper_owner)):
-        raise HTTPException(403, "Only the memo owner can export stems")
+    directory, metadata = _access(memo_id, owner_token(x_keeper_owner), owner_only=True)
     if not _completed(directory):
         raise HTTPException(404, "Memo is not ready to export")
     manifest = _within(directory, directory / "upload.json")

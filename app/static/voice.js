@@ -6,6 +6,7 @@
     loading_done: ["Listening to all {duration}. Yes, all of it.", "All {duration}, ready to listen.", "The whole room, loaded up.", "{duration} on the table. Let's get into it."],
     ast_start: ["Sorting singing from talking from whatever that noise is.", "Finding where the music lives.", "A little order for the room.", "Music here, talking there. Working through it."],
     ast_progress: ["Still listening. Nobody's rushing you.", "Making my way through the room.", "Another stretch listened to.", "Following the session, one window at a time."],
+    spark_limit: ["The command budget is full. Keeping the rest as ideas.", "That's the command budget. The remaining music stays.", "The remaining spoken moments will stay unfiled.", "Keeping the memo, with the remaining commands left alone."],
     regions_found: ["Found {n_singing} stretches of music. Busy session.", "{n_speech} moments of you talking to yourself. Very normal.", "{n_singing} music stretches, with room to talk between them.", "The map's taking shape. {n_speech} spoken moments to check."],
     file: ['You said "{heard}". Filing it under {Section}.', '"{heard}". Noted. That\'s going in {Section}.', '"{heard}". {Section} it is.', 'Your words: "{heard}". Your folder: {Section}.'],
     keep: ['"{heard}". Say less. Keeping it.', "Keeper of the day: {time}.", '"{heard}". That one stays.', "Keeping the one you pointed out at {time}."],
@@ -56,6 +57,7 @@
       case "loading_done": return `loaded  ${d.duration_s.toFixed(2)} s · mono float32`;
       case "ast_start": return `ast     ${d.n_windows} windows · ${d.window_s} s window · ${d.hop_s} s hop · ${d.device}${d.cached ? " · cached scores" : ""}`;
       case "ast_progress": return `ast     ${d.windows_done} windows scored`;
+      case "spark_limit": return `spark   ${d.n_skipped} speech regions skipped · ${d.cap} call cap`;
       case "regions_found": return `regions ${d.n_singing} music · ${d.n_speech} speech · ${d.total_singing_s.toFixed(1)} s music`;
       case "spark_result": return `spark   ${span}  "${d.heard}"  → ${d.intent}${d.section ? " · " + d.section : ""} · ${d.target} · ${d.scope} · ${Number(d.confidence).toFixed(2)}${d.cached ? " · cached" : ""}`;
       case "take_cut": return `cut     ${d.name}  ${span}  (${(d.end - d.start).toFixed(1)} s)`;

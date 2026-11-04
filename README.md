@@ -1,5 +1,24 @@
 # Keeper
 
+Memos are private from other visitors through a random token kept in each browser.
+They are stored on Modal. Audio is processed on Modal GPUs, and short clips of
+spoken commands are sent to Baseten for Meta's Muse Spark to read. Deleting a memo
+removes its files; clearing browser data loses access to your memos. Non-showcase
+memos expire after 14 days by default. Uploads default to 30 minutes and 150 MB.
+Use All takes (ZIP) for recordings over 20 minutes; arrangement WAV export is
+disabled for them because the browser decodes the whole original into memory.
+
+Upload, cost and retention defaults can be changed with KEEPER_MAX_AUDIO_MINUTES,
+KEEPER_MAX_UPLOAD_MB, KEEPER_OWNER_DAILY_UPLOADS, KEEPER_OWNER_DAILY_MINUTES,
+KEEPER_DAILY_MINUTES, KEEPER_RETENTION_DAYS and KEEPER_UPLOADS_ENABLED. Browser
+quotas and the global audio budget use a rolling 24-hour window; reservations
+remain charged after deletion. The quota ledger has one web-container writer
+protected by a lock. Public docs are enabled locally and disabled in production.
+Run `.venv\Scripts\python.exe scripts/purge_expired.py --dry-run` to inspect a
+bounded retention batch, or omit `--dry-run` to remove it; `--modal` targets the
+deployed volume. Run `.venv\Scripts\python.exe scripts/check_private_strings.py`
+before every push; failures reveal only file paths and line numbers.
+
 The redesigned editor uses the supplied Keeper dark/light design tokens and
 locally served Google Fonts (Figtree and Geist Mono). Dark is the default; the
 theme button persists the browser's choice. Recording, take previews, and canvas

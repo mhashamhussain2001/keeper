@@ -9,8 +9,9 @@
   try { toggle.checked = localStorage.getItem("keeper-process-only") === "true"; } catch (_) {}
   label.append(toggle, document.createTextNode("Show process only")); heading.append(el("h2", "", "Listening, one idea at a time"), label);
   const entries = el("div", "listening-entries"); entries.id = "listening-entries"; entries.role = "log";
+  const queued = el("p", "listening-queue"); queued.id = "listening-queue"; queued.role = "status"; queued.hidden = true;
   entries.setAttribute("aria-live", "polite"); entries.setAttribute("aria-relevant", "additions");
-  card.append(heading, entries); document.querySelector(".recording").after(card);
+  card.append(heading, queued, entries); document.querySelector(".recording").after(card);
   toggle.onchange = () => { card.classList.toggle("process-only", toggle.checked); try { localStorage.setItem("keeper-process-only", String(toggle.checked)); } catch (_) {} };
   toggle.onchange();
   let active = null;
@@ -41,6 +42,11 @@
     }
     feed(status) {
       if (this.phase !== "listening") return;
+      queued.hidden = status.state !== "queued";
+      if (!queued.hidden) {
+        const ahead = Math.max(0, Number(status.queue_ahead) || 0);
+        queued.textContent = ahead ? `Your memo is queued. ${ahead} memo${ahead === 1 ? "" : "s"} ahead.` : "Your memo is queued. You are next.";
+      }
       if (!this.peaks.length && status.peaks?.length) { this.peaks = status.peaks; if (this.loaded) this.draw(); }
       const incoming = status.events || [];
       for (let i = this.seen; i < incoming.length; i++) {

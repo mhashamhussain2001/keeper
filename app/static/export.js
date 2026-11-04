@@ -29,6 +29,7 @@ function selectedExportTake() {
 }
 async function exportAudio(singleTake=null) {
   if (exportStage) return;
+  if (!singleTake && state.data.duration_s > 20 * 60) { exportToast("Use All takes (ZIP) for long memos"); return; }
   const memo=state.memo, memoTitle=state.data.meta.title;
   const clips=singleTake?[{...singleTake,timelineStart:0}]:canvasQueue(state.canvas,state.takes).map(take=>({...take,start:take.sourceOffset,end:take.sourceOffset+take.end-take.start}));
   if (!clips.length) return;
@@ -76,7 +77,7 @@ async function exportStems() {
 function openExportMenu(anchor) {
   if (exportStage) return;
   const take=selectedExportTake(), items=[
-    {label:"Arrangement (WAV)",disabledReason:!state.canvas.clips.length?"Add takes to the canvas first.":"",run:()=>exportAudio()},
+    {label:"Arrangement (WAV)",disabledReason:state.data.duration_s>20*60?"Use All takes (ZIP) for long memos":!state.canvas.clips.length?"Add takes to the canvas first.":"",run:()=>exportAudio()},
     {label:"All takes (ZIP)",disabledReason:!state.takes.some(take=>take.section!=="rejected")?"There are no takes to export.":!state.data?.meta.owned?"Only the memo owner can export stems.":"",run:exportStems},
   ];
   if (take) items.push({label:"This take (WAV)",run:()=>exportAudio({...take})});

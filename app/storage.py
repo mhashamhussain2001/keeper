@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,7 +23,7 @@ class Settings:
 
 def memo_directory(settings: Settings, memo_id: str) -> Path:
     """Return a validated memo directory strictly inside the configured outputs root."""
-    if not memo_id or memo_id in (".", "..") or any(char in memo_id for char in "/\\:"):
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}", memo_id):
         raise ValueError("Invalid memo ID")
     directory = (settings.outputs_root / memo_id).resolve()
     if not directory.is_relative_to(settings.outputs_root.resolve()) or directory == settings.outputs_root.resolve():

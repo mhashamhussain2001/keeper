@@ -29,15 +29,15 @@ def seed_original(memo: Path) -> None:
 
 
 def test_stems_owner_and_showcase(memo: Path) -> None:
-    """Return None after checking different or absent tokens receive 403 and owners can export showcases."""
+    """Return None after checking different or absent tokens receive 404 and owners can export showcases."""
     seed_original(memo)
-    assert request("GET", "/api/memos/demo/export/stems", owner=OWNER_B).status == 403
-    assert request("GET", "/api/memos/demo/export/stems", owner=None).status == 403
+    assert request("GET", "/api/memos/demo/export/stems", owner=OWNER_B).status == 404
+    assert request("GET", "/api/memos/demo/export/stems", owner=None).status == 404
     metadata = json.loads((memo / "meta.json").read_text())
     metadata["showcase"] = True
     (memo / "meta.json").write_text(json.dumps(metadata))
     assert request("GET", "/api/memos/demo/export/stems").status == 200
-    assert request("GET", "/api/memos/demo/export/stems", owner=OWNER_B).status == 403
+    assert request("GET", "/api/memos/demo/export/stems", owner=OWNER_B).status == 404
 
 
 def test_stems_names_songmap_native_rate_channels_and_fades(memo: Path) -> None:

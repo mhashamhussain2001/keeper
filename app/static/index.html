@@ -5,7 +5,8 @@
 <link rel="stylesheet" href="/fonts.css"><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/editor.css"><link rel="stylesheet" href="/round3.css"><link rel="stylesheet" href="/processing.css"></head><body>
 <aside class="sidebar"><div class="brand-row"><a class="brand" href="/">keeper<span></span></a><button id="sidebar-toggle" class="circle" aria-label="Toggle sidebar" aria-expanded="true"></button><button id="theme" class="circle" aria-label="Switch to light theme"></button></div>
 <button id="upload" class="primary upload">Upload memo</button><input id="file" type="file" accept="audio/*,.m4a,.mp4,.aac,.caf,.mp3,.wav,.aif,.aiff,.flac,.ogg,.opus,.webm" hidden>
-<p class="eyebrow">MEMOS</p><nav id="memo-list" aria-label="Memos"></nav><select id="memo-picker" aria-label="Choose memo"></select></aside>
+<p id="upload-limits" class="upload-policy"></p>
+<p class="eyebrow">MEMOS</p><nav id="memo-list" aria-label="Memos"></nav><select id="memo-picker" aria-label="Choose memo"></select><p id="browser-privacy" class="upload-policy"></p></aside>
 <main><header class="memo-heading"><h1 id="memo-title">Your next song starts here</h1><p id="memo-meta">Upload a voice memo to find your ideas.</p><div id="memo-actions" hidden><button id="rename">Rename</button><button id="delete">Delete</button><input id="rename-input" aria-label="Memo title" hidden></div></header>
 <p id="status" role="status" hidden></p><p id="privacy-hint" hidden></p>
 <section class="card recording"><div class="card-heading"><button id="record-play" class="circle primary" aria-label="Play Recording"></button><h2>Recording</h2><span class="spacer"></span><span id="record-time" class="mono">0:00 / 0:00</span><label class="detail-label"><input id="show-detail" type="checkbox">Show detail</label><div class="zoom"><button data-zoom="record:-" aria-label="Zoom recording out"></button><button data-zoom="record:fit">Fit</button><button data-zoom="record:+" aria-label="Zoom recording in"></button></div></div>
@@ -88,4 +89,4 @@
         refreshHint(); return result;
       };
     })();
-  </script><script src="/icons.js"></script><script src="/ui_helpers.js"></script><script src="/redesign.js"></script><script src="/editor.js"></script><script src="/round3.js"></script><script src="/export.js"></script><script src="/voice.js"></script><script src="/processing.js"></script></body></html>
+  </script><script src="/icons.js"></script><script src="/ui_helpers.js"></script><script src="/redesign.js"></script><script src="/editor.js"></script><script src="/round3.js"></script><script src="/export.js"></script><script src="/voice.js"></script><script src="/processing.js"></script><script src="/policy.js"></script></body></html>
