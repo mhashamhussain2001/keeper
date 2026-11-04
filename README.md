@@ -329,3 +329,19 @@ owner headers, default selection, and visual-only smoothing. Node is needed for
 these frontend tests; the deployed app serves plain JavaScript without Node.
 The CLI seeder sends a run-scoped owner token; use set_showcase.py explicitly
 after seeding if that recording should become a public example.
+
+## Results
+
+Hand-checked on a 2:15 demo memo (piano and voice, recorded Nov 4):
+
+- 6 takes played, 5 found. Two takes merged into one because the command between them was missed.
+- 4 of 5 spoken commands handled ("file that as a verse", "that's a bridge", "dump that", "scrap that as well").
+
+This is one memo checked by hand, not a benchmark.
+
+## Known limits
+
+- A short command squeezed between two takes can be missed. AST listens in 2-second windows, so a sub-second "scrap that" with almost no gap reads as silence and never reaches Spark.
+- Continuous playing becomes one take. Keeper cuts at speech or silence, so stop between attempts.
+- Muse Spark's output varies between runs on the same clip, so results are cached per memo.
+- The browser decodes the whole recording into memory, so uploads are capped at 30 minutes.
