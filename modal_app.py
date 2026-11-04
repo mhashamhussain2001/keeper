@@ -79,15 +79,11 @@ class GPUWorker:
         try:
             if not torch.cuda.is_available():
                 raise RuntimeError("The requested GPU worker has no CUDA device")
-            process(memo_id, settings, commit=volume.commit, gpu=torch.cuda.get_device_name(0))
+            process(memo_id, settings, commit=volume.commit, gpu=torch.cuda.get_device_name(0), warmup_s=self.warmup_s)
         except Exception as exc:
             write_status(directory, "failed", "failed", str(exc), gpu="T4")
             volume.commit()
             raise
-        status = json.loads((directory / "status.json").read_text())
-        write_status(directory, status["state"], status["stage"], status.get("error"),
-                     gpu_librosa_warmup_s=self.warmup_s)
-        volume.commit()
 
 
 @app.function(image=image, cpu=1, memory=2048, timeout=300, volumes={"/data": volume},

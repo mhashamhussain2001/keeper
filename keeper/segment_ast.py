@@ -1,6 +1,7 @@
 """Optional local AST scoring behind a scorer protocol."""
 
 from math import ceil
+from collections.abc import Callable
 from typing import Protocol
 
 import numpy as np
@@ -39,7 +40,8 @@ class ASTScorer:
         self.label_indices = label_indices
         self.model.eval()
 
-    def score_windows(self, y: np.ndarray, sr: int, win_s: float, hop_s: float) -> pd.DataFrame:
+    def score_windows(self, y: np.ndarray, sr: int, win_s: float, hop_s: float,
+                      progress: Callable[[int], None] | None = None) -> pd.DataFrame:
         """Return scores for hop-spaced windows with a zero-padded final window."""
         import torch
 
@@ -54,6 +56,7 @@ class ASTScorer:
         rows: list[dict[str, float]] = []
         window_count = ceil(len(y) / (hop_s * sr))
         window_samples = round(win_s * sr)
+        reported_bucket = 0
         for batch_start in range(0, window_count, self.batch_size):
             indices = range(batch_start, min(batch_start + self.batch_size, window_count))
             windows = []
@@ -71,4 +74,9 @@ class ASTScorer:
                 row.update({group: max(row[label] for label in labels) for group, labels in SCORE_GROUPS.items()})
                 row["music"] = max(row["singing"], row["instrument"])
                 rows.append(row)
+            done = min(batch_start + self.batch_size, window_count)
+            bucket = done * 10 // max(1, window_count)
+            if progress is not None and bucket > reported_bucket:
+                progress(done)
+                reported_bucket = bucket
         return pd.DataFrame(rows, columns=columns)

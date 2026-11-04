@@ -69,12 +69,23 @@ def editor_url(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
         destination = memo.parent / memo_id
         shutil.copytree(memo, destination)
         (destination / "meta.json").write_text(json.dumps({**metadata, "title": name, "created_at": created, "showcase": showcase}))
-    with socket.socket() as port_socket:
-        port_socket.bind(("127.0.0.1",0))
-        port = port_socket.getsockname()[1]
+    port_path = folder / "port.txt"
     env = {**os.environ,"KEEPER_OUTPUTS_DIR":str(folder / "outputs"),"KEEPER_UPLOADS_DIR":str(uploads)}
     # Model/network construction is disabled in the server subprocess, including future upload tests.
-    code = "import uvicorn,app.server as s; s.start_processing=lambda memo_id: None; uvicorn.run(s.app,host='127.0.0.1',port="+str(port)+",log_level='error')"
+    # Keep the selected socket bound in the serving process: closing a parent
+    # reservation and rebinding in a child races Windows port access rules.
+    code = "\n".join([
+        "import socket,uvicorn,app.server as s",
+        "from pathlib import Path",
+        "s.start_processing=lambda memo_id: None",
+        "sock=socket.socket()",
+        "sock.bind(('127.0.0.1',0))",
+        "sock.listen(128)",
+        f"port_file=Path({str(port_path)!r})",
+        "port_file.with_suffix('.tmp').write_text(str(sock.getsockname()[1]))",
+        "port_file.with_suffix('.tmp').replace(port_file)",
+        "uvicorn.Server(uvicorn.Config(s.app,host='127.0.0.1',log_level='error')).run(sockets=[sock])",
+    ])
     server_log = (folder / "server.log").open("w", encoding="utf-8")
     process = subprocess.Popen([str(root / ".venv/Scripts/python.exe"),"-c",code],cwd=root,env=env,stdout=server_log,stderr=subprocess.STDOUT)
     try:
@@ -82,6 +93,10 @@ def editor_url(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
         while time.monotonic()<deadline:
             if process.poll() is not None:
                 raise RuntimeError("Local editor server exited: " + (folder / "server.log").read_text(encoding="utf-8"))
+            if not port_path.exists():
+                time.sleep(.1)
+                continue
+            port = int(port_path.read_text())
             try:
                 with socket.create_connection(("127.0.0.1",port),timeout=.3):
                     break

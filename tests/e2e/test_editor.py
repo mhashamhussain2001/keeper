@@ -105,7 +105,9 @@ def test_showcase_has_no_delete(editor: Page) -> None:
     """Return None after checking even an owned showcase memo has no delete control."""
     editor.locator('[data-memo="showcase-memo"]').click()
     expect(editor.locator("#memo-title")).to_have_text("Showcase memo")
-    expect(editor.locator("#memo-more")).to_be_hidden()
+    editor.locator("#memo-more").click()
+    expect(editor.get_by_role("menuitem", name="Replay reveal")).to_be_visible()
+    expect(editor.get_by_role("menuitem", name="Delete memo...", exact=True)).to_have_count(0)
 
 
 def test_delete_pending_and_error_stays_open(editor: Page) -> None:

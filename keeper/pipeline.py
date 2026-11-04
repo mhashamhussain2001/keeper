@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from collections.abc import Callable
 from math import ceil
 from pathlib import Path
+from time import perf_counter
 
 import numpy as np
 import pandas as pd
@@ -15,13 +16,14 @@ from keeper.audio_io import load_audio, rms_db_per_frame
 from keeper.config import SCORE_GROUPS, KeeperConfig
 from keeper.cut import cut_takes
 from keeper.export import export_clips
+from keeper.events import EventCallback, EventReporter
 from keeper.frames import frame_labels_from_scores, frame_scores_from_windows
 from keeper.labels import LabelParser, MockLabelParser, MuseSparkLabelParser
 from keeper.regions import absorb_short, merge_frames, merge_adjacent
 from keeper.segment_ast import ASTScorer, Scorer
 from keeper.songmap import build_songmap
 from keeper.trim import trim_takes
-from keeper.types import Region, SongMap
+from keeper.types import CommandLabel, Region, SongMap
 from keeper.unlabeled import find_unlabeled
 
 
@@ -36,8 +38,25 @@ def run_pipeline(
     no_export: bool = False,
     duration_s: float | None = None,
     progress: Callable[[str], None] | None = None,
+    on_event: EventCallback | None = None,
 ) -> tuple[SongMap, list[Region], list[str]]:
     """Return the exported song map, scored regions, and warnings after writing pipeline artifacts."""
+    reporter = EventReporter(on_event)
+    try:
+        return _run_pipeline(audio_path, parser, out_dir, cfg, scores_csv, scorer, rms_json,
+                             no_export, duration_s, progress, reporter)
+    except Exception as exc:
+        reporter.emit("failed", message=str(exc))
+        raise
+
+
+def _run_pipeline(
+    audio_path: str | Path, parser: LabelParser, out_dir: str | Path,
+    cfg: KeeperConfig | None, scores_csv: str | Path | None, scorer: Scorer | None,
+    rms_json: str | Path | None, no_export: bool, duration_s: float | None,
+    progress: Callable[[str], None] | None, reporter: EventReporter,
+) -> tuple[SongMap, list[Region], list[str]]:
+    """Return unchanged pipeline results while reporting completed work to the observer."""
     config = cfg if cfg is not None else KeeperConfig()
     if progress is not None:
         progress("loading audio")
@@ -73,13 +92,27 @@ def run_pipeline(
             y = y[:round(duration_s * config.sample_rate)]
         rms = rms_db_per_frame(y, config.sample_rate, config.hop_s)
         duration = float(len(y) / config.sample_rate)
+    reporter.emit("received", filename=source.name, duration_s=duration, sample_rate=config.sample_rate)
+    reporter.emit("loading_done", duration_s=duration)
     if progress is not None:
         progress("scoring audio (cached AST)" if scores_csv is not None else "scoring audio (AST)")
     if scores_csv is not None:
         scores = pd.read_csv(scores_csv)
+        reporter.emit("ast_start", n_windows=len(scores), device="CPU", cached=True,
+                      window_s=config.win_s, hop_s=config.hop_s)
+        reporter.emit("ast_progress", windows_done=len(scores))
     else:
         active_scorer = scorer if scorer is not None else ASTScorer()
-        scores = active_scorer.score_windows(y, config.sample_rate, config.win_s, config.hop_s)
+        n_windows = ceil(duration / config.hop_s)
+        reporter.emit("ast_start", n_windows=n_windows,
+                      device="T4 GPU" if str(getattr(active_scorer, "device", "cpu")).startswith("cuda") else "CPU",
+                      window_s=config.win_s, hop_s=config.hop_s)
+        if reporter.callback is not None and on_ast_progress_supported(active_scorer):
+            scores = active_scorer.score_windows(y, config.sample_rate, config.win_s, config.hop_s,
+                                                 progress=lambda done: reporter.emit("ast_progress", windows_done=done))
+        else:
+            scores = active_scorer.score_windows(y, config.sample_rate, config.win_s, config.hop_s)
+            reporter.emit("ast_progress", windows_done=len(scores))
     scores["music"] = scores[["singing", "instrument"]].max(axis=1)
     frame_labels, gate = frame_labels_from_scores(scores, rms, config)
     regions = merge_frames(frame_labels, config.hop_s)
@@ -94,6 +127,10 @@ def run_pipeline(
             group: float((overlapping[group] * weights).sum() / weights.sum()) for group in (*SCORE_GROUPS, "music")
         }
     speech = [region for region in regions if region.kind == "speech"]
+    singing = [region for region in regions if region.kind == "music"]
+    reporter.emit("regions_found", n_singing=len(singing), n_speech=len(speech),
+                  total_singing_s=sum(region.end - region.start for region in singing),
+                  speech_regions=[{"start": region.start, "end": region.end} for region in speech])
     # Keep completed scoring work even if the downstream command service fails.
     destination.mkdir(parents=True, exist_ok=True)
     score_checkpoint = destination / "window_scores.tmp"
@@ -108,12 +145,26 @@ def run_pipeline(
     if isinstance(parser, MuseSparkLabelParser):
         parser.configure_prompt(config.spark_prompt_v2)
         parser.preflight(clips)
+
+    def parse_region(audio: np.ndarray, sr: int, region: Region) -> CommandLabel:
+        """Return the original parser result after reporting this completed speech interpretation."""
+        label = parser.parse(audio, sr, region)
+        cached = False
+        if isinstance(parser, MuseSparkLabelParser):
+            with parser.lock:
+                cached = next((bool(record.get("cached")) for record in reversed(parser.records)
+                               if record["start"] == region.start and record["end"] == region.end), False)
+        reporter.emit("spark_result", start=region.start, end=region.end, heard=label.heard or "",
+                      intent=label.intent or ("file" if label.is_command else "none"), section=label.section,
+                      target=label.target, scope=label.scope, confidence=label.confidence, cached=cached)
+        return label
+
     if isinstance(parser, MuseSparkLabelParser) and config.parallel_spark:
         with ThreadPoolExecutor(max_workers=4) as pool:
-            futures = [pool.submit(parser.parse, audio, sr, region) for audio, sr, region in clips]
+            futures = [pool.submit(parse_region, audio, sr, region) for audio, sr, region in clips]
             commands = {region.start: future.result() for (_, _, region), future in zip(clips, futures)}
     else:
-        commands = {region.start: parser.parse(audio, sr, region) for audio, sr, region in clips}
+        commands = {region.start: parse_region(audio, sr, region) for audio, sr, region in clips}
     parser_warnings = []
     for region in speech:
         label = commands[region.start]
@@ -143,7 +194,21 @@ def run_pipeline(
                    indent=2, allow_nan=False), encoding="utf-8",
     )
     (destination / "warnings.txt").write_text("".join(f"{warning}\n" for warning in warnings), encoding="utf-8")
+    for section, section_takes in songmap.sections.items():
+        for index, take in enumerate(section_takes, 1):
+            name = f"{'Idea' if section == 'unsorted' else section.capitalize()} {index}"
+            reporter.emit("take_cut", take_id=take.id, name=name, section=section, start=take.start, end=take.end)
+    reporter.emit("done", n_takes=sum(len(takes) for section, takes in songmap.sections.items() if section != "rejected"),
+                  n_sections=sum(bool(takes) for section, takes in songmap.sections.items() if section != "rejected"),
+                  elapsed_s=perf_counter() - reporter.started)
     return songmap, regions, warnings
+
+
+def on_ast_progress_supported(scorer: Scorer) -> bool:
+    """Return whether the scorer accepts optional progress without changing custom scorer contracts."""
+    from inspect import signature
+
+    return "progress" in signature(scorer.score_windows).parameters
 
 
 def main(argv: list[str] | None = None) -> int:

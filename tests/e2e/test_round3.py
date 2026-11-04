@@ -32,7 +32,10 @@ def test_inline_memo_rename(editor: Page) -> None:
     editor.reload()
     expect(editor.locator('#memo-title')).to_have_text('Piano ideas')
     editor.locator('[data-memo="showcase-memo"]').click()
-    expect(editor.locator('#memo-more')).to_be_hidden()
+    expect(editor.locator('#memo-title')).to_have_text('Showcase memo')
+    editor.locator('#memo-more').click()
+    expect(editor.get_by_role('menuitem', name='Replay reveal')).to_be_visible()
+    expect(editor.get_by_role('menuitem', name='Rename memo...')).to_have_count(0)
 
 
 @pytest.mark.parametrize('width', [1024, 1440, 390])
@@ -41,13 +44,19 @@ def test_recording_labels_do_not_overlap(editor: Page, width: int) -> None:
     editor.set_viewport_size({'width': width, 'height': 900})
     editor.evaluate('document.fonts.ready')
     for zoom in (1, 3):
-        editor.evaluate('zoom=>{state.recordZoom=zoom;renderRecording()}', zoom)
-        boxes = editor.locator('.recording-label').evaluate_all('nodes=>nodes.map(n=>{const b=n.getBoundingClientRect();return {x:b.x,y:b.y,right:b.right,bottom:b.bottom,text:n.textContent}})')
-        assert len(boxes) == editor.locator('.recording-band').count()
+        layout = editor.evaluate('''async zoom=>{
+            await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+            state.recordZoom=zoom;renderRecording();
+            await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+            return {boxes:[...document.querySelectorAll('.recording-label')].map(n=>{const b=n.getBoundingClientRect();return {x:b.x,y:b.y,right:b.right,bottom:b.bottom,text:n.textContent}}),
+                    bands:document.querySelectorAll('.recording-band').length,edge:document.getElementById('timeline').getBoundingClientRect().toJSON()};
+        }''', zoom)
+        boxes = layout['boxes']
+        assert len(boxes) == layout['bands']
         for index, a in enumerate(boxes):
             for b in boxes[index+1:]:
                 assert a['right'] <= b['x'] or b['right'] <= a['x'] or a['bottom'] <= b['y'] or b['bottom'] <= a['y'], (a, b)
-        edge = editor.locator('#timeline').bounding_box()
+        edge = layout['edge']
         assert all(b['right'] <= edge['x']+edge['width']+1 for b in boxes)
     assert all(editor.locator('.recording-band').nth(i).get_attribute('aria-label') for i in range(editor.locator('.recording-band').count()))
 

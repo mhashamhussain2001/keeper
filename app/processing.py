@@ -5,41 +5,48 @@ import logging
 import os
 from collections.abc import Callable
 from threading import Thread
+from typing import Any
 
 from dotenv import load_dotenv
 
-from app.storage import Settings, memo_directory, write_status
+from app.storage import Settings, memo_directory
+from app.event_status import EventStatus
 from app.waveform import write_peaks
 from keeper.config import KeeperConfig
 from keeper.labels import MockLabelParser, MuseSparkLabelParser
 from keeper.pipeline import run_pipeline
+from keeper.events import EventReporter
 
 
 logger = logging.getLogger(__name__)
 
 
 def process_memo(memo_id: str, settings: Settings, commit: Callable[[], None] | None = None,
-                 gpu: str | None = None) -> None:
+                 gpu: str | None = None, warmup_s: float | None = None) -> None:
     """Return None after processing a saved upload and persisting done or failed status."""
     directory = memo_directory(settings, memo_id)
     parser_name = "mock"
-
-    def progress(stage: str) -> None:
-        """Return None after publishing a running stage and synchronizing mounted storage."""
-        write_status(directory, "running", stage, parser=parser_name, gpu=gpu)
-        if commit is not None:
-            commit()
+    status = EventStatus(directory, commit, parser=parser_name, gpu=gpu, gpu_librosa_warmup_s=warmup_s)
 
     try:
         load_dotenv()
         parser_name = "spark" if os.environ.get("BASETEN_API_KEY") else "mock"
-        progress("loading audio")
+        status.metadata["parser"] = parser_name
+        status.progress("loading audio")
         manifest = json.loads((directory / "upload.json").read_text(encoding="utf-8"))
         source = (settings.uploads_root / manifest["filename"]).resolve()
         if not source.is_relative_to(settings.uploads_root.resolve()):
             raise ValueError("Upload path escaped uploads root")
         if not (directory / "peaks.json").exists():
             write_peaks(source, directory)
+        status.metadata["peaks"] = json.loads((directory / "peaks.json").read_text(encoding="utf-8"))["peaks"]
+
+        def event(observation: dict[str, Any]) -> None:
+            """Return None after attaching the original display filename to real pipeline observations."""
+            if observation["type"] == "received":
+                observation["data"]["filename"] = manifest.get("original_filename", source.name)
+            status.event(observation)
+
         if parser_name == "spark":
             parser = MuseSparkLabelParser(directory / "spark_cache.json", KeeperConfig().max_spark_calls,
                                           prompt_v2=KeeperConfig().spark_prompt_v2)
@@ -48,16 +55,15 @@ def process_memo(memo_id: str, settings: Settings, commit: Callable[[], None] | 
             mock.write_text("{}\n", encoding="utf-8")
             parser = MockLabelParser(mock)
         cache = directory / "window_scores.csv"
-        run_pipeline(source, parser, directory, scores_csv=cache if cache.exists() else None, progress=progress)
-        write_status(directory, "done", "done", parser=parser_name, gpu=gpu)
-        if commit is not None:
-            commit()
+        run_pipeline(source, parser, directory, scores_csv=cache if cache.exists() else None,
+                     progress=status.progress, on_event=event)
+        status.finish("done")
     except Exception as exc:
         logger.exception("Processing failed for memo %s", memo_id)
         (directory / "songmap.json").unlink(missing_ok=True)
-        write_status(directory, "failed", "failed", str(exc), parser=parser_name, gpu=gpu)
-        if commit is not None:
-            commit()
+        if not status.events or status.events[-1]["type"] != "failed":
+            EventReporter(status.event).emit("failed", message=str(exc))
+        status.finish("failed", str(exc))
 
 
 def start_local_processing(memo_id: str, settings: Settings) -> Thread:

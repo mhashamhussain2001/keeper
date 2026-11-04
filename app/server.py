@@ -171,7 +171,7 @@ def memo_status(memo_id: str, x_keeper_owner: Owner = None) -> dict[str, Any]:
     if path.is_file():
         return _read_json(path)
     if (directory / "songmap.json").is_file():
-        return {"state": "done", "stage": "done", "error": None, "updated_at": None, "history": []}
+        return {"state": "done", "stage": "done", "error": None, "updated_at": None, "history": [], "events": []}
     raise HTTPException(status_code=404, detail="Memo not found")
 
 

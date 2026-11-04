@@ -42,7 +42,7 @@ def write_status(directory: Path, state: str, stage: str, error: str | None = No
     if not history or (history[-1]["state"], history[-1]["stage"]) != (state, stage):
         history.append({"state": state, "stage": stage, "updated_at": timestamp})
     status = {**previous, **metadata, "state": state, "stage": stage, "error": error,
-              "updated_at": timestamp, "history": history}
+              "updated_at": timestamp, "history": history, "events": metadata.get("events", previous.get("events", []))}
     directory.mkdir(parents=True, exist_ok=True)
     temporary = directory / "status.tmp"
     temporary.write_text(json.dumps(status, indent=2) + "\n", encoding="utf-8")

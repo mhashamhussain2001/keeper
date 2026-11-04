@@ -1528,3 +1528,74 @@ Implementation choices not specified in the prompt:
   thresholds, deployment settings, scores, original audio or live memo data
   changed. All requested implementation/deployment steps are complete; the
   three environment-dependent tests above remain skipped locally.
+
+## 2026-11-03 — Live processing log and the chop reveal
+
+- Read AGENTS.md and private/prompts/codex_prompt_processing_experience.md.
+  Added an optional timestamped pipeline observer with received/loading, real
+  AST batch progress, region counts and speech spans, per-completion Spark
+  interpretations (including cache flags), final take cuts, done and failure
+  events. Existing scoring, thresholds, command interpretation, cutting, export
+  and callback-free CLI results are unchanged. Event callbacks are serialized;
+  app/event_status.py guards append plus atomic publication, reserves a terminal
+  slot within 400 events, and coalesces Modal status writes/commits to at most
+  once per second. Warmup metadata shares that publication budget.
+- Added dependency-free voice.js and processing.js/CSS: memo-seeded copy,
+  actual process data in Geist Mono, persisted process-only mode, local upload
+  peaks with server fallback, a breathing unloaded line, real-progress scanner,
+  speech spans and command pins. Polls run every second. Reading queues use
+  450/120 ms pacing with a 1.8-second terminal drain budget. Processing shows
+  the uploaded title and filename; failures retain their real readable log.
+- Implemented the recording-card FLIP and section-band reveal, cropped waveform
+  flights, rejected-group destinations, row entrances and counting. Motion uses
+  WAAPI transform/opacity, supports click/Escape/Space skip and reduced motion,
+  skips flights to off-screen targets, and limits large memos to ten flights.
+  Replay is available from the memo menu and ?reveal=1 (optional memo=ID).
+  Showcase menus allow replay without editing. Replay never clears or restarts
+  the shared audio player. Fixed a rejected-group selector found by the new
+  large-memo regression and synchronized the showcase-menu test with memo load.
+- Added pipeline output/order, parallel completion, cached transcript, concurrent
+  append/cap and one-second publisher tests; Playwright covers actual file-input
+  polling with scripted events, exact heard text, repeatable copy, skip methods,
+  reduced motion, URL/menu replay, persistent process-only mode, mobile bounds,
+  final editor DOM/audio equivalence, large/rejected takes and failure logs.
+  The focused fixes passed all three targeted browser regressions in 31.90s.
+  A subsequent full run exposed two test-harness races: Windows rejected the
+  child server's rebind of a parent-selected ephemeral port, and a mobile SVG
+  assertion sampled nodes during responsive replacement. The fixture now
+  selects and retains the actual serving socket inside the child, handing it
+  directly to Uvicorn and atomically publishing its port. The label assertion
+  waits for frames and measures labels, bands and bounds in one DOM snapshot.
+  Both targeted regressions passed in 17.50s.
+  Final full suite: .venv\Scripts\python.exe -m pytest -q --browser chromium —
+  **309 passed, 3 skipped, 11 existing decoder warnings in 451.56s**. No failed
+  tests or setup errors. Final captured pytest tail:
+  outputs/processing_full_suite.txt. git diff --check passes.
+- Regenerated and visually inspected outputs/ui_screens/processing_mid_log.png,
+  processing_mid_reveal.png (slices captured during flight), and
+  processing_mobile.png. Existing suite screenshots are also regenerated.
+  Added scripts/verify_processing.py using the existing Playwright development
+  dependency; it uploads data/test_2.m4a through production Chromium, retains
+  the private owner token only in ignored outputs, captures real log/reveal and
+  final-editor screenshots, saves exact two-line DOM log text, and downloads
+  a generated RIFF WAV. No dependencies added.
+- Deployed with the venv's modal deploy modal_app.py and process-only UTF-8
+  console settings. Two real uploads completed with no browser errors. Latest
+  upload: be0981af2bc3447ba947bd8469599ce2, 376.83-second M4A, 754 T4 windows,
+  eight Spark interpretations, 33 events, ten takes and five sections; pipeline
+  elapsed 77.03s, complete browser verification 153.44s, downloaded verse WAV
+  569,644 bytes. Evidence and full actual log:
+  outputs/processing_upload_final/report.json and actual_log.txt; screenshots:
+  live_mid_log.png, live_mid_reveal.png, live_final_editor.png in that folder.
+  Production: https://mhashamhussain2001--keeper-web.us-east.modal.run .
+- Final redeploy completed in 46.950s. All 17 deployed HTML/CSS/JS assets match
+  local SHA-256 hashes. Replayed the latest real memo on that final deployment
+  via ?reveal=1&memo=ID, verified the full two-line log exactly matches the saved
+  upload log, and confirmed ten rows/count. The production menu's Space skip
+  preserves audio generation/state, and reduced motion leaves no animations.
+  No browser errors. Record: outputs/processing_deployment.json; final deployed
+  replay screenshot: outputs/processing_upload_final/live_final_replay.png.
+- Remaining environment checks: real phone hardware is unavailable here;
+  Chromium's mobile viewport is covered. Existing CUDA and two local M4A
+  decoder checks require a CUDA device/local ffmpeg respectively. Source audio,
+  .env and data were not committed; generated evidence and tokens stay ignored.
