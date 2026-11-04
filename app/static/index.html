@@ -16,7 +16,7 @@
 <dialog id="delete-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-title" aria-describedby="delete-body">
 <h2 id="delete-title">Delete this memo?</h2><p id="delete-body"></p><p id="delete-error" role="alert" hidden></p>
 <div class="dialog-actions"><button id="cancel-delete" autofocus>Cancel</button><button id="confirm-delete" class="danger">Delete</button></div></dialog>
-<script src="/audio.js"></script><script id="ios-audio-session">
+<script src="/wav_encoder.js"></script><script src="/audio_render.js"></script><script src="/audio.js"></script><script id="ios-audio-session">
     "use strict";
     (() => {
       const prototype = window.KeeperPlayer.prototype;
@@ -88,4 +88,4 @@
         refreshHint(); return result;
       };
     })();
-  </script><script src="/icons.js"></script><script src="/ui_helpers.js"></script><script src="/redesign.js"></script><script src="/editor.js"></script><script src="/round3.js"></script></body></html>
+  </script><script src="/icons.js"></script><script src="/ui_helpers.js"></script><script src="/redesign.js"></script><script src="/editor.js"></script><script src="/round3.js"></script><script src="/export.js"></script></body></html>

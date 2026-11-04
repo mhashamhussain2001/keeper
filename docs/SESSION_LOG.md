@@ -1466,3 +1466,65 @@ Implementation choices not specified in the prompt:
   hardware verification remains manual.
 
 2026-11-03: Fixed iPhone voice-memo uploads with the exact audio/* plus extension picker filter in the shared sidebar/collapsed/mobile/empty-state input and MIME-or-extension backend admission; decoding, 50 MiB, and 10-minute validation unchanged. Added real ffmpeg-generated M4A, fake-M4A, MIME/extension, and four-layout Playwright regressions. Full suite: 281 passed, 3 skipped (CUDA and two M4A cases because local ffmpeg is absent), 11 decoder warnings, 243.01s. Redeployed with the venv's modal deploy modal_app.py after a Windows console encoding error was resolved using process-only UTF-8 settings; live page returned HTTP 200 with the exact accept filter. No dependencies added.
+
+## 2026-11-03 — Original-quality arrangement WAV and stems exports
+
+- Restored the bottom-right Export button and connected the mobile transport
+  download control to the same keyboard-accessible menu: Arrangement (WAV),
+  All takes (ZIP), and This take (WAV) when selected or playing. Empty canvas,
+  absent takes, and non-owner stems exports have disabled items with reasons.
+  Menus open above footer controls, support arrows/Home/End/Escape/Tab, restore
+  focus, and open with Space without triggering the global playback shortcut.
+- Original recording responses expose their native sample rate/channel count.
+  The shared player caches both buffers and in-flight decoding promises; native
+  OfflineAudioContext decoding avoids hardware-rate resampling and a second
+  decode between recording/Canvas playback and export. Each Canvas clip has its
+  own source and gain node, reading the original take offset. Overlaps sum in
+  Play-through and export, with 5 ms linear edge fades and a 0.5-second tail.
+  Playback keeps original-quality buffers while preview files remain untouched.
+- Browser exports use native-rate/channel offline rendering and a PCM16 WAV
+  worker, with a cooperative main-thread fallback. Peaks above 0.99 receive one
+  logged flat gain to -1 dBFS, preserving relative/channel balance. Progress
+  reports decoding/rendering/writing, including mobile; arrangements over ten
+  minutes require confirmation. Decode/render/encoding allocation failures retry
+  mono 16 kHz previews with an explanatory toast; total failure releases controls.
+  Single-take exports use the same fades, encoder, and portable filename rules.
+- Added owner-only GET /api/memos/{id}/export/stems, explicitly returning 403 for
+  another token and permitting owners of showcases without mutation. Archives
+  re-cut originals using soundfile, preserve native channels/rate, apply fades,
+  and contain unique numbered WAV names in Canvas time/lane order followed by
+  unplaced takes in source order. songmap.txt includes names, sections, original
+  times, and heard text. Rejected takes require include_rejected=1 and live under
+  rejected/. Conservative PCM/header sizing rejects totals over 500 MiB with
+  413 before cutting; ZIPs spool to disk and stream in 64 KiB chunks with cleanup.
+  Existing deployment ffprobe/ffmpeg supports originals that libsndfile cannot
+  read, including M4A, without resampling or downmixing. No dependencies added.
+- Full suite: .venv\Scripts\python.exe -m pytest -q --browser chromium:
+  **294 passed, 3 skipped, 11 existing decoder warnings in 360.97s**. Skips are
+  the existing CUDA test and two M4A cases because local ffmpeg is unavailable.
+  A final Space-key menu regression also passed independently (14.99s). Tests
+  cover native WAV headers/duration/channels, actual overlap sample sums,
+  playback scheduling and one shared fetch/decode, selected-take downloads,
+  server ZIP downloads, keyboard/mobile menus, long-export cancellation,
+  worker fallback, decode/allocation recovery, owner/showcase access, naming,
+  source ordering, heard text, rejected takes, size guards and native rate/fades.
+  Updated the existing seek regression to wait for the enabled seek control
+  while the native original decodes; encoder units verify PCM16 headers, sample
+  counts/interleaving, and balanced peak attenuation.
+- Chromium benchmark: a synthetic stereo 44.1 kHz original with 239 half-second
+  Canvas placements plus tail produced a 120.000-second PCM16 arrangement.
+  Offline render/scheduling time **4.2907 seconds**; WAV **21,168,044 bytes**,
+  **44,100 Hz, two channels, 16-bit**. No preview fallback or attenuation was
+  needed. This timing excludes source fetch/decode and WAV encoding. Metrics:
+  outputs/ui_screens/export_benchmark.json. Regenerated outputs/ui_screens,
+  including export_menu_dark.png, export_menu_light.png and
+  export_menu_mobile.png, and inspected both themes/mobile and the desktop view.
+- Redeployed with .venv\Scripts\python.exe -m modal deploy modal_app.py using
+  process-only UTF-8 console settings; Modal reported **41.746s**. Live URL:
+  https://mhashamhussain2001--keeper-web.us-east.modal.run . All 14 live HTML,
+  CSS and JavaScript assets exactly match local SHA-256 hashes, and the live
+  OpenAPI schema includes the stems route. Verification record:
+  outputs/export_deployment.json. git diff --check passes. No pipeline,
+  thresholds, deployment settings, scores, original audio or live memo data
+  changed. All requested implementation/deployment steps are complete; the
+  three environment-dependent tests above remain skipped locally.

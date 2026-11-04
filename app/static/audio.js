@@ -8,7 +8,7 @@
       cancel = id => root.cancelAnimationFrame(id), objectURL = blob => root.URL.createObjectURL(blob),
       revokeURL = url => root.URL.revokeObjectURL(url)} = {}) {
       Object.assign(this, {fetchClip, onChange, onError, onStart, contextFactory, audioFactory, raf, cancel, objectURL, revokeURL});
-      this.context = null; this.audio = null; this.buffers = new Map(); this.blobs = new Map();
+      this.context = null; this.audio = null; this.buffers = new Map(); this.pendingBuffers = new Map(); this.blobs = new Map();
       this.queue = []; this.sources = []; this.lengths = []; this.offset = 0; this.mode = "stopped";
       this.backend = "web"; this.generation = 0; this.frame = null; this.startedAt = 0;
     }
@@ -44,12 +44,16 @@
       resumed.catch(() => {});
       return resumed;
     }
-    get total() { return this.lengths.reduce((sum, length) => sum + length, 0); }
+    get total() { return this.queue[0]?.context === "Canvas" ? Math.max(0,...this.queue.map(take=>take.timelineStart+take.end-take.start)) + .5 : this.lengths.reduce((sum, length) => sum + length, 0); }
     get position() {
       if (this.mode !== "playing") return this.offset;
       return Math.max(0, Math.min(this.total, this.backend === "html" ? this.audio.currentTime : Math.max(this.offset, this.context.currentTime - this.startedAt)));
     }
     get current() {
+      if (this.queue[0]?.context === "Canvas") {
+        return this.queue.findLast(take=>take.timelineStart<=this.position&&take.timelineStart+take.end-take.start>this.position)
+          || this.queue.findLast(take=>take.timelineStart<=this.position) || this.queue[0];
+      }
       let time = this.position;
       for (let i = 0; i < this.queue.length; i++) { if (time < this.lengths[i] || i === this.queue.length - 1) return this.queue[i]; time -= this.lengths[i]; }
       return null;
@@ -63,7 +67,7 @@
       }
     }
     haltSources() {
-      for (const source of this.sources) { source.onended = null; try { source.stop(); } catch (_) {} source.disconnect(); }
+      for (const source of this.sources) { source.onended = null; try { source.stop(); } catch (_) {} source.disconnect(); source.keeperGain?.disconnect(); }
       this.sources = []; if (this.frame !== null) this.cancel(this.frame); this.frame = null;
     }
     pause() {
@@ -77,7 +81,7 @@
       this.emit();
     }
     clear() {
-      this.stop(); this.queue = []; this.lengths = []; this.buffers.clear();
+      this.stop(); this.queue = []; this.lengths = []; this.buffers = new Map(); this.pendingBuffers = new Map();
       for (const url of this.blobs.values()) this.revokeURL(url);
       this.blobs.clear(); if (this.audio) this.audio.removeAttribute("src"); this.emit();
     }
@@ -106,6 +110,22 @@
       if (this.backend === "html") { this.audio.currentTime = offset; this.offset = offset; this.emit(); return Promise.resolve(); }
       return this.start(this.queue, offset, resumed);
     }
+    async loadBuffer(url) {
+      if (this.buffers.has(url)) return this.buffers.get(url);
+      if (this.pendingBuffers.has(url)) return this.pendingBuffers.get(url);
+      const buffers = this.buffers, pending = this.pendingBuffers;
+      const task = (async () => {
+        const fetched = await this.fetchClip(url), bytes = fetched.bytes || fetched;
+        let decoder = this.context;
+        if (fetched.sampleRate) decoder = new root.OfflineAudioContext(1, 1, fetched.sampleRate);
+        if (!decoder) decoder = new root.OfflineAudioContext(1, 1, 16000);
+        if (/\/recording$/.test(url) && !fetched.sampleRate) throw Error("Original sample rate is unavailable");
+        const buffer = await decoder.decodeAudioData(bytes.slice(0));
+        buffers.set(url, buffer); return buffer;
+      })();
+      pending.set(url, task);
+      try { return await task; } finally { pending.delete(url); }
+    }
     async start(takes, offset, resumed) {
       if (!takes.length) return;
       this.stop(); const generation = this.generation;
@@ -117,14 +137,29 @@
           resumed.then(value => { clearTimeout(timer); resolve(value); }, error => { clearTimeout(timer); reject(error); });
         });
         if (this.context.state !== "running") throw new Error("Audio context is interrupted");
+        if (takes[0]?.context === "Canvas") {
+          const buffers = await Promise.all(takes.map(async take => {
+            try { return {buffer:await this.loadBuffer(take.recording_url), offset:take.sourceOffset}; }
+            catch (_) { return {buffer:await this.loadBuffer(take.clip_url), offset:0}; }
+          }));
+          if (generation !== this.generation) return;
+          this.backend = "web";
+          const now = this.context.currentTime + .04; this.startedAt = now - offset;
+          takes.forEach((take, i) => {
+            if (take.timelineStart + take.end - take.start <= offset) return;
+            this.sources.push(root.KeeperAudio.scheduleClip(this.context, buffers[i].buffer, {
+              when:now + Math.max(0, take.timelineStart - offset), offset:buffers[i].offset,
+              duration:take.end-take.start, elapsed:Math.max(0, offset-take.timelineStart),
+            }));
+          });
+          // A silent end marker also completes the tail when background RAF is throttled on iOS.
+          const marker = this.context.createBufferSource(); marker.buffer = this.context.createBuffer(1, 1, this.context.sampleRate);
+          marker.connect(this.context.destination); marker.start(now + Math.max(0, this.total - offset)); this.sources.push(marker);
+          this.mode = "playing"; this.onStart(); this.tick(); return;
+        }
         const buffers = await Promise.all(takes.map(async take => {
           if (take.silence) return this.context.createBuffer(1, Math.max(1, Math.round((take.end - take.start) * this.context.sampleRate)), this.context.sampleRate);
-          let buffer = this.buffers.get(take.clip_url);
-          if (!buffer) {
-            const bytes = await this.fetchClip(take.clip_url);
-            buffer = await this.context.decodeAudioData(bytes.slice(0));
-            if (generation === this.generation) this.buffers.set(take.clip_url, buffer);
-          }
+          const buffer = await this.loadBuffer(take.clip_url);
           if (take.slice_start === undefined) return buffer;
           const begin = Math.round(take.slice_start * buffer.sampleRate);
           const count = Math.max(1, Math.min(buffer.length - begin, Math.round((take.end - take.start) * buffer.sampleRate)));
@@ -157,7 +192,7 @@
         if (!this.audio) throw new Error("Audio playback is unavailable");
         let url = this.blobs.get(take.clip_url);
         if (!url) {
-          const bytes = await this.fetchClip(take.clip_url);
+          const fetched = await this.fetchClip(take.clip_url), bytes = fetched.bytes || fetched;
           if (generation !== this.generation) return;
           url = this.objectURL(new Blob([bytes], {type:"audio/wav"})); this.blobs.set(take.clip_url, url);
         }

@@ -13,7 +13,7 @@ function el(tag,cls="",text=""){const node=document.createElement(tag);node.clas
 function svg(tag,attrs={},text=""){const node=document.createElementNS("http://www.w3.org/2000/svg",tag);for(const[k,v]of Object.entries(attrs))node.setAttribute(k,v);node.textContent=text;return node;}
 function color(section){const key=({unsorted:"idea",intro:"verse",outro:"unlabeled",hook:"chorus","pre-chorus":"chorus",rejected:"unlabeled"})[section]||section;return`var(--sec-${["verse","chorus","bridge","idea","unlabeled"].includes(key)?key:"idea"})`;}
 let playback={mode:"stopped",position:0,total:0,current:null,queue:[]},looping=false;
-const player=new KeeperPlayer({fetchClip:async url=>(await api(url)).arrayBuffer(),onError:message=>notice(message,true),onStart:()=>{if(/iPad|iPhone|iPod/.test(navigator.userAgent))$("ios-hint").hidden=false;},onChange:renderPlayback});
+const player=new KeeperPlayer({fetchClip:async url=>{const response=await api(url),bytes=await response.arrayBuffer();return /\/recording$/.test(url)?{bytes,sampleRate:Number(response.headers.get("X-Audio-Sample-Rate"))}:bytes;},onError:message=>notice(message,true),onStart:()=>{if(/iPad|iPhone|iPod/.test(navigator.userAgent))$("ios-hint").hidden=false;},onChange:renderPlayback});
 window.keeper={state,player,api};
 function renderPlayback(value){
   playback=value;const playing=value.mode==="playing",current=value.current,context=current?.context;

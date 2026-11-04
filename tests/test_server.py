@@ -55,10 +55,11 @@ class Response:
 def request(method: str, path: str, body: bytes = b"", content_type: str = "", owner: str | None = OWNER_A) -> Response:
     """Return an in-process ASGI response, preserving decoded traversal paths for tests."""
     messages: list[Message] = []
+    path, _, query = path.partition("?")
     scope: Scope = {
         "type": "http", "asgi": {"version": "3.0", "spec_version": "2.4"},
         "http_version": "1.1", "method": method, "scheme": "http",
-        "path": unquote(path), "raw_path": path.encode(), "query_string": b"", "root_path": "",
+        "path": unquote(path), "raw_path": path.encode(), "query_string": query.encode(), "root_path": "",
         "headers": [(b"content-type", content_type.encode()), (b"content-length", str(len(body)).encode())],
         "client": ("127.0.0.1", 1234), "server": ("testserver", 80),
     }

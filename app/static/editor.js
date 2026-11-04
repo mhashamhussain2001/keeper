@@ -2,7 +2,6 @@
 /* View interactions share the existing player, persistence, and owner-scoped API. */
 const {icon,setIcon}=KeeperIcons;
 const exportControl=el("button","icon");exportControl.id="transport-export";exportControl.setAttribute("aria-label","Export current audio");$("stop").before(exportControl);
-exportControl.onclick=()=>attempt((async()=>{if(!playback.current?.clip_url||playback.current.context==="Canvas")return;const response=await api(playback.current.clip_url),blob=await response.blob(),url=URL.createObjectURL(blob),link=el("a");link.href=url;link.download=(playback.current.name||"Recording")+(blob.type.includes("mp4")?".m4a":".wav");link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);})());
 const canonical=["intro","verse","pre-chorus","chorus","bridge","hook","outro","unsorted","unlabeled"];
 function canEdit(){return !!state.data?.meta.owned&&!state.data.meta.showcase;}
 function presentSections(){const keys=[...new Set(state.takes.map(t=>t.section))];return [...canonical.filter(k=>keys.includes(k)),...keys.filter(k=>!canonical.includes(k)&&k!=="rejected"),...(keys.includes("rejected")?["rejected"]:[])];}
@@ -20,7 +19,7 @@ function paintIcons(){
   const active=!!playback.current&&["playing","paused"].includes(playback.mode);
   for(const id of["prev","next"])setDisabled($(id),!active);
   setDisabled($("loop"),!state.data);setDisabled($("stop"),!active);
-  setDisabled(exportControl,!playback.current?.clip_url||context==="Canvas");
+  setDisabled(exportControl,!state.data);
 }
 
 /* A single tooltip, dismissed by every interaction that could strand it. */
@@ -35,13 +34,14 @@ document.addEventListener("keydown",event=>{if(event.key==="Escape"){hideTooltip
 
 /* Menus and text entry work with both pointer and keyboard input. */
 let menu=null,menuAnchor=null,menuVersion=0;
-function closeMenu(focus=false){menuVersion++;if(menu){menu.remove();menu=null;if(focus)menuAnchor?.focus();}}
+function closeMenu(focus=false){menuVersion++;menuAnchor?.setAttribute("aria-expanded","false");if(menu){menu.remove();menu=null;if(focus)menuAnchor?.focus();}}
 function openMenu(anchor,items){
   closeMenu();hideTooltip();menuAnchor=anchor;menu=el("div","editor-menu");menu.role="menu";menu.setAttribute("aria-label","Actions");
-  for(const item of items){const button=el("button","",item.label);button.role="menuitem";button.onclick=()=>{closeMenu();attempt(item.run());};menu.append(button);}
+  anchor.setAttribute("aria-expanded","true");
+  for(const item of items){const button=el("button","",item.label);button.role="menuitem";if(item.disabledReason){button.setAttribute("aria-disabled","true");button.title=item.disabledReason;button.setAttribute("aria-description",item.disabledReason);}button.onclick=()=>{if(item.disabledReason)return;closeMenu(true);attempt(item.run());};menu.append(button);}
   const box=anchor.getBoundingClientRect();menu.style.left=`${Math.max(8,Math.min(innerWidth-208,box.left))}px`;menu.style.top=`${Math.min(innerHeight-items.length*32-12,box.bottom+4)}px`;document.body.append(menu);
-  const size=menu.getBoundingClientRect();menu.style.top=`${Math.max(8,Math.min(box.bottom+4,innerHeight-size.height-8))}px`;
-  menu.onkeydown=event=>{const buttons=[...menu.querySelectorAll("button")],at=buttons.indexOf(document.activeElement);if(["ArrowDown","ArrowUp","Home","End"].includes(event.key)){event.preventDefault();buttons[event.key==="Home"?0:event.key==="End"?buttons.length-1:(at+(event.key==="ArrowDown"?1:-1)+buttons.length)%buttons.length].focus();}if(event.key==="Escape"){event.preventDefault();event.stopPropagation();closeMenu(true);}};
+  const size=menu.getBoundingClientRect();menu.style.top=`${Math.max(8,box.bottom+size.height+12>innerHeight?box.top-size.height-4:box.bottom+4)}px`;
+  menu.onkeydown=event=>{const buttons=[...menu.querySelectorAll("button")],at=buttons.indexOf(document.activeElement);if(["ArrowDown","ArrowUp","Home","End"].includes(event.key)){event.preventDefault();buttons[event.key==="Home"?0:event.key==="End"?buttons.length-1:(at+(event.key==="ArrowDown"?1:-1)+buttons.length)%buttons.length].focus();}if(event.key==="Escape"){event.preventDefault();event.stopPropagation();closeMenu(true);}if(event.key==="Tab")closeMenu();};
   menu.querySelector("button")?.focus();
 }
 const nameDialog=document.createElement("dialog");nameDialog.id="name-dialog";nameDialog.setAttribute("aria-labelledby","name-dialog-title");nameDialog.innerHTML='<form method="dialog"><h2 id="name-dialog-title"></h2><input id="name-dialog-input" aria-label="Name" required maxlength="120"><div class="dialog-actions"><button value="cancel" formnovalidate>Cancel</button><button value="save" class="primary">Save</button></div></form>';document.body.append(nameDialog);

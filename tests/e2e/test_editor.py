@@ -175,6 +175,7 @@ def test_canvas_drag_persists_and_playthrough_advances(editor: Page) -> None:
     expect(editor.locator(".canvas-clip")).to_have_count(2)
     editor.locator("#play-through").click()
     expect(editor.locator("#playing-status")).to_contain_text("Canvas · Verse 1")
+    expect(editor.locator("#seek")).to_be_enabled()
     # Seek via the real transport to just before the second clip, then let audio advance.
     start=editor.evaluate("window.keeper.state.canvas.clips[1].start")
     editor.locator("#seek").evaluate("(node,value)=>{node.value=value;node.dispatchEvent(new Event('input',{bubbles:true}))}",max(0,start-.1))

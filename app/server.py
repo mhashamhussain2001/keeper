@@ -3,6 +3,8 @@
 import json
 import logging
 import shutil
+import subprocess
+from collections.abc import Iterator
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated, Any
@@ -13,7 +15,8 @@ from collections.abc import Awaitable, Callable
 
 from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from starlette.responses import Response
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
+from starlette.background import BackgroundTask
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, model_validator
 
@@ -22,6 +25,8 @@ from app.processing import start_local_processing
 from app.storage import Settings, memo_directory, write_status
 from app.uploads import AUDIO_EXTENSIONS, save_upload, validate_audio
 from app.analysis_view import command_analysis
+from app.native_audio import audio_format, open_original
+from app.stems import build_stems, ordered_takes, safe_filename
 
 
 settings = Settings()
@@ -386,7 +391,62 @@ def recording(memo_id: str, x_keeper_owner: Owner = None) -> FileResponse:
     source = _within(settings.uploads_root, settings.uploads_root / _read_json(manifest)["filename"])
     if not source.is_file():
         raise HTTPException(404, "Original recording unavailable")
-    return FileResponse(source)
+    try:
+        rate, channels = audio_format(source)
+    except (OSError, ValueError, IndexError, KeyError, subprocess.SubprocessError):
+        # Playback can still try a browser decoder; export explicitly reports a preview fallback.
+        return FileResponse(source)
+    return FileResponse(source, headers={"X-Audio-Sample-Rate": str(rate), "X-Audio-Channels": str(channels)})
+
+
+@app.get("/api/memos/{memo_id}/export/stems")
+def export_stems(memo_id: str, x_keeper_owner: Owner = None, include_rejected: bool = False) -> StreamingResponse:
+    """Return an owner's bounded original-quality stems ZIP, allowing read-only showcase exports."""
+    reload_storage()
+    # This download deliberately returns 403 for a known memo with a different browser token.
+    try:
+        directory = memo_directory(settings, memo_id)
+        metadata = read_meta(directory)
+    except (ValueError, OSError):
+        raise HTTPException(404, "Memo not found") from None
+    if not directory.is_dir():
+        raise HTTPException(404, "Memo not found")
+    if not owns(metadata, owner_token(x_keeper_owner)):
+        raise HTTPException(403, "Only the memo owner can export stems")
+    if not _completed(directory):
+        raise HTTPException(404, "Memo is not ready to export")
+    manifest = _within(directory, directory / "upload.json")
+    if not manifest.exists():
+        raise HTTPException(404, "Original recording unavailable")
+    source = _within(settings.uploads_root, settings.uploads_root / _read_json(manifest)["filename"])
+    if not source.is_file():
+        raise HTTPException(404, "Original recording unavailable")
+    songmap = _read_json(_within(directory, directory / "songmap.json"))
+    names_path = _within(directory, directory / "take_names.json")
+    canvas_path = _within(directory, directory / "canvas.json")
+    takes = ordered_takes(songmap, _read_json(names_path) if names_path.exists() else {},
+                          _read_json(canvas_path) if canvas_path.exists() else {}, include_rejected)
+    if not takes:
+        raise HTTPException(422, "No takes to export")
+    try:
+        with open_original(source) as audio:
+            archive = build_stems(audio, takes)
+    except OverflowError as exc:
+        raise HTTPException(413, str(exc)) from exc
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        raise HTTPException(422, f"Cannot export original audio: {exc}") from exc
+
+    def chunks() -> Iterator[bytes]:
+        """Yield ZIP chunks and release the temporary archive on completion or disconnect."""
+        try:
+            while chunk := archive.read(64 * 1024):
+                yield chunk
+        finally:
+            archive.close()
+
+    filename = quote(safe_filename(metadata.get("title", "Memo")) + " - stems.zip", safe="")
+    return StreamingResponse(chunks(), media_type="application/zip", background=BackgroundTask(archive.close),
+                             headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"})
 
 
 app.mount("/", StaticFiles(directory=settings.static_root, html=True), name="static")

@@ -9,9 +9,9 @@ test('detail smoothing preserves saved regions',()=>{
   const before=JSON.stringify(source),result=visualRegions(source);
   assert.equal(JSON.stringify(source),before);assert.equal(result.length,2);assert.equal(result[1].start,3);
 });
-test('canvas overlap takes topmost lane and preserves gaps and offsets',()=>{
+test('canvas overlap preserves every full clip and its source offset for mixing',()=>{
   const takes=[{id:'a',name:'Verse 1',start:10,end:14,clip_url:'/a.wav'},{id:'b',name:'Chorus 1',start:20,end:22,clip_url:'/b.wav'}];
   const queue=canvasQueue({clips:[{take_id:'a',start:1,lane:2},{take_id:'b',start:2,lane:0}]},takes);
-  assert.equal(queue[0].silence,true);assert.equal(queue[0].end,1);
-  assert.deepEqual(queue.slice(1).map(x=>[x.take_id,x.slice_start,x.end]),[['a',0,1],['b',0,2],['a',3,1]]);
+  assert.deepEqual(queue.map(x=>[x.take_id,x.timelineStart,x.sourceOffset,x.end]),[['a',1,10,4],['b',2,20,2]]);
+  assert.equal(queue.length,2);
 });
