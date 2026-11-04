@@ -1,5 +1,49 @@
 # Keeper
 
+**Finds the takes in your songwriting voice memos, and files them by what you said.**
+
+Live: https://mhashamhussain2001--keeper-web.us-east.modal.run
+Demo video: https://www.youtube.com/watch?v=dG-uOieTylM
+Built solo for the Meta Global AI Developer Hackathon (Indie track, Nov 2026).
+
+## The problem
+
+Songwriters record long voice memos: twenty minutes of playing, talking to yourself, and trying the chorus five different ways. The good take is in there somewhere, but finding it means scrubbing the whole file, so most memos never get opened again.
+
+## What Keeper does
+
+1. Upload a voice memo. No tagging while you record.
+2. Keeper cuts out every sung or played take.
+3. It reads what you said around each take ("file that as a verse", "scrap that", "that's the bridge") and files the take into that section.
+4. Takes you scrapped are kept in a Rejected section, not deleted.
+5. Drag takes onto the song canvas, play it through like a rough demo, and export the arrangement as a WAV or every take as stems at original quality.
+
+## How it works
+
+- **Listening (AST on a Modal T4 GPU):** the Audio Spectrogram Transformer scores 2-second windows (0.5 s hop) and Keeper groups them into singing/playing, speech and silence. Music runs become takes.
+- **Understanding (Meta Muse Spark Open via Baseten):** each speech region, with 0.3 s of context, is sent to `meta-models/muse-spark-open-1026`. Spark returns structured JSON: intent (file, keep, reject, none), section, which take it targets, scope and confidence. Results are cached per memo.
+- **Filing logic:** maps Spark's decisions onto takes, trims take edges, and puts unclaimed music in Unlabeled.
+- **App:** FastAPI on a Modal CPU container, a Modal Volume for storage, and a plain-JavaScript frontend with a shared Web Audio engine. A 6:16 memo runs end to end in about 78 s once the GPU is warm.
+- **Privacy:** memos are tied to a random token in your browser; anyone else gets a 404. Showcase memos are public and read-only. Memos expire after 14 days.
+
+## Results
+
+Hand-checked on a 2:15 demo memo (piano and voice, recorded Nov 4):
+
+- 6 takes played, 5 found. Two takes merged into one because the command between them was missed.
+- 4 of 5 spoken commands handled ("file that as a verse", "that's a bridge", "dump that", "scrap that as well").
+
+This is one memo checked by hand, not a benchmark.
+
+## Known limits
+
+- A short command squeezed between two takes can be missed. AST listens in 2-second windows, so a sub-second "scrap that" with almost no gap reads as silence and never reaches Spark.
+- Continuous playing becomes one take. Keeper cuts at speech or silence, so stop between attempts.
+- Muse Spark's output varies between runs on the same clip, so results are cached per memo.
+- The browser decodes the whole recording into memory, so uploads are capped at 30 minutes.
+
+## Developer notes
+
 Memos are private from other visitors through a random token kept in each browser.
 They are stored on Modal. Audio is processed on Modal GPUs, and short clips of
 spoken commands are sent to Baseten for Meta's Muse Spark to read. Deleting a memo
@@ -31,8 +75,7 @@ Canvas sections can be added, renamed by double-click, reordered by drag, and
 resized at the right edge. Drag a take onto any time/lane; drag clips to move
 them, and use their remove button or Delete/Backspace to remove a selected clip.
 Changes save to canvas.json. Overlapping clips play the smallest lane number;
-ties use insertion order. Gaps play silence. Canvas WAV export is not implemented,
-so its control is hidden. Showcase memos support playback; editing stays owner-only.
+ties use insertion order. Gaps play silence. Showcase memos support playback; editing stays owner-only.
 
 Run browser tests with the project's venv after installing the development tools:
 
@@ -52,9 +95,6 @@ with `.venv\Scripts\python.exe -m modal deploy modal_app.py`. This keeps one T4
 worker warm and incurs idle GPU charges. Set it back to `0` and redeploy after
 the demo. Its default remains `0`.
 
-Finds musical takes buried in long songwriting voice memos and files them into a song canvas, using the labels the writer speaks after each take. Activity labels are music, speech, and silence; unclaimed music goes into the separate unlabeled section.
-Built for the Meta Global AI Developer Hackathon (Oct 26 to Nov 4, 2026). Work in progress.
-
 Run the offline tests (including the real memo's numeric fixture):
 
 ```powershell
@@ -71,7 +111,7 @@ Run the fixture without audio, model loading, or clip export:
 
 `regions.json` contains `{"silence_gate_db": ..., "regions": [...]}`. Window and region scores retain singing, speech, and instrument probabilities and add music, computed as the maximum of singing and instrument per window before averaging. Activity classification uses speech scores and RMS only.
 
-## Known limitations
+### Pipeline limitations
 
 AST filterbank features use the transformers numpy fallback because no torchaudio release matches torch 2.14.1; results in this repo are measured on that path.
 
@@ -91,7 +131,7 @@ Run the cached-score, oracle-command ablation without loading AST:
 .\.venv\Scripts\python.exe scripts/ablate_memos.py
 ```
 
-## Spark command parsing
+### Spark command parsing
 
 `openai==3.41.0` (already pinned) supplies the Baseten-compatible client; no
 additional dependency is needed. Set `BASETEN_API_KEY` in your local `.env`.
@@ -158,7 +198,7 @@ ffmpeg faster cold, but its maximum memo1 AST difference was 0.066790, exceeding
 the 0.01 acceptance limit. The optional ffmpeg path is diagnostic only; production
 retains librosa. No decoder or classification thresholds were adjusted.
 
-## Local web UI
+### Local web UI
 
 From the repo root, install the web dependencies, create a playable demo, and start Keeper:
 
@@ -232,7 +272,7 @@ Implementation choices beyond the skeleton spec:
   actual API tests remain socket-free, and upload tests stub only the AST scorer.
   Browser tests are not included; manual listening remains the playback check.
 
-## Modal deployment
+### Modal deployment
 
 Local startup remains `.\.venv\Scripts\python.exe -m uvicorn app.server:app`.
 `KEEPER_OUTPUTS_DIR` and `KEEPER_UPLOADS_DIR` optionally override local storage;
@@ -272,7 +312,7 @@ Completed AST scores are checkpointed before Spark, so command-service failures
 retain the score cache. A failed seed also saves its stage timing report before
 raising an error.
 
-## Per-browser memo privacy and controls
+### Per-browser memo privacy and controls
 
 This is **per-browser privacy, not accounts**. Each browser stores a random UUID
 in localStorage and sends it as `X-Keeper-Owner` on every API request, including
@@ -329,19 +369,3 @@ owner headers, default selection, and visual-only smoothing. Node is needed for
 these frontend tests; the deployed app serves plain JavaScript without Node.
 The CLI seeder sends a run-scoped owner token; use set_showcase.py explicitly
 after seeding if that recording should become a public example.
-
-## Results
-
-Hand-checked on a 2:15 demo memo (piano and voice, recorded Nov 4):
-
-- 6 takes played, 5 found. Two takes merged into one because the command between them was missed.
-- 4 of 5 spoken commands handled ("file that as a verse", "that's a bridge", "dump that", "scrap that as well").
-
-This is one memo checked by hand, not a benchmark.
-
-## Known limits
-
-- A short command squeezed between two takes can be missed. AST listens in 2-second windows, so a sub-second "scrap that" with almost no gap reads as silence and never reaches Spark.
-- Continuous playing becomes one take. Keeper cuts at speech or silence, so stop between attempts.
-- Muse Spark's output varies between runs on the same clip, so results are cached per memo.
-- The browser decodes the whole recording into memory, so uploads are capped at 30 minutes.
