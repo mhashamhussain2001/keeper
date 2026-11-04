@@ -19,6 +19,7 @@
     constructor(id, peaks = [], replay = false) {
       active?.cancel(); active = this;
       this.id = id; this.peaks = peaks; this.replay = replay; this.events = []; this.queue = [];
+      this.voice = KeeperVoice.createPersonality(id);
       this.animations = new Set(); this.clones = new Set(); this.phase = "listening"; this.duration = 1;
       this.skipped = false; this.seen = 0; this.timer = null; this.deadline = null; this.loaded = false;
       this.drained = new Promise(resolve => { this.resolveDrain = resolve; });
@@ -91,9 +92,40 @@
       scanner.style.transform = `translateX(${this.scannerX}px)`; node.append(scanner);
     }
     line({event, index}) {
+      if (event.type === "ast_progress") {
+        this.astProgress(event.data.windows_done, index);
+        return;
+      }
+      if (["regions_found", "done"].includes(event.type) && this.ast) this.astProgress(this.ast.data.n_windows, index);
       const row = el("div", "listening-entry"); row.dataset.event = event.type;
-      row.append(el("p", "listening-voice", KeeperVoice.personality(this.id, event, index)), el("pre", "listening-process", KeeperVoice.process(event)));
+      row.append(el("p", "listening-voice", this.voice(event, index)), el("pre", "listening-process", KeeperVoice.process(event)));
+      if (event.type === "ast_start") {
+        const track = el("div", "listening-progress"), fill = el("div", "listening-progress-fill"), caption = el("p", "listening-caption");
+        track.role = "progressbar"; track.setAttribute("aria-label", "Audio windows scored");
+        track.setAttribute("aria-valuemin", "0"); track.setAttribute("aria-valuemax", String(event.data.n_windows));
+        track.setAttribute("aria-valuenow", "0"); fill.style.transform = "scaleX(0)"; track.append(fill);
+        caption.hidden = true; row.append(track, caption);
+        this.ast = {row, data: event.data, track, fill, caption, milestone: 0, windows: 0};
+        row.querySelector(".listening-process").textContent = `ast     0 / ${event.data.n_windows} windows`;
+      }
       entries.append(row); entries.scrollTop = entries.scrollHeight;
+    }
+    astProgress(windows, index) {
+      if (!this.ast) return;
+      const ast = this.ast, total = ast.data.n_windows;
+      ast.windows = Math.max(ast.windows, Math.min(total, windows));
+      const fraction = total > 0 ? ast.windows / total : 1;
+      ast.track.setAttribute("aria-valuenow", String(ast.windows));
+      ast.fill.style.transform = `scaleX(${fraction})`;
+      ast.row.querySelector(".listening-process").textContent = fraction >= 1
+        ? KeeperVoice.process({type: "ast_start", data: ast.data}) : `ast     ${ast.windows} / ${total} windows`;
+      const milestone = Math.min(3, Math.floor(fraction * 4));
+      for (let next = ast.milestone + 1; next <= milestone; next++) {
+        ast.caption.textContent = this.voice({type: "ast_progress", data: {windows_done: ast.windows}}, `${index}:${next}`);
+        ast.caption.hidden = false;
+      }
+      ast.milestone = milestone;
+      entries.scrollTop = entries.scrollHeight;
     }
     pump() {
       if (this.timer !== null) return;
@@ -198,7 +230,8 @@
       const now = new Date(); form.append("title", `Memo, ${now.toLocaleDateString("en-US", {month: "short", day: "numeric"})}, ${now.toLocaleTimeString("en-US", {hour: "numeric", minute: "2-digit"})}`);
       notice("Uploading memo…"); const result = await json("/api/memos", {method: "POST", body: form});
       session = new Listening(result.memo_id); notice("");
-      $("memo-title").textContent = form.get("title"); $("memo-meta").textContent = file.name;
+      $("memo-title").textContent = form.get("title");
+      $("memo-meta").textContent = `${now.toLocaleDateString("en-US", {month: "short", day: "numeric"})} · ${now.toLocaleTimeString("en-US", {hour: "numeric", minute: "2-digit"})}`;
       $("memo-meta").classList.remove("empty-subtitle");
       peakPromise.then(peaks => { if (session.phase === "listening" && peaks.length) { session.peaks = peaks; session.draw(); } });
       while (true) {

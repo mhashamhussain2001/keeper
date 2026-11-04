@@ -27,6 +27,7 @@ from app.uploads import AUDIO_EXTENSIONS, save_upload, validate_audio
 from app.analysis_view import command_analysis
 from app.native_audio import audio_format, open_original
 from app.stems import build_stems, ordered_takes, safe_filename
+from app.privacy import public_artifact
 
 
 settings = Settings()
@@ -158,18 +159,18 @@ def memo_detail(memo_id: str, x_keeper_owner: Owner = None) -> dict[str, Any]:
             take["clip_url"] = f"/api/memos/{quote(memo_id, safe='')}/clips/{quote(relative, safe='/')}"
     peaks_path = _within(directory, directory / "peaks.json")
     peaks = _read_json(peaks_path)["peaks"] if peaks_path.exists() else [0.0] * 800
-    return {"songmap": songmap, "regions": regions, "duration_s": duration, "peaks": peaks, "meta": public_meta(metadata, owner),
-            "analysis": command_analysis(directory, songmap, regions)}
+    return public_artifact({"songmap": songmap, "regions": regions, "duration_s": duration, "peaks": peaks, "meta": public_meta(metadata, owner),
+                            "analysis": command_analysis(directory, songmap, regions)}, metadata.get("original_filename", ""))
 
 
 @app.get("/api/memos/{memo_id}/status")
 def memo_status(memo_id: str, x_keeper_owner: Owner = None) -> dict[str, Any]:
     """Return authorized status and timestamped stages, including queued or failed memos."""
     reload_storage()
-    directory, _ = _access(memo_id, owner_token(x_keeper_owner))
+    directory, metadata = _access(memo_id, owner_token(x_keeper_owner))
     path = _within(directory, directory / "status.json")
     if path.is_file():
-        return _read_json(path)
+        return public_artifact(_read_json(path), metadata.get("original_filename", ""))
     if (directory / "songmap.json").is_file():
         return {"state": "done", "stage": "done", "error": None, "updated_at": None, "history": [], "events": []}
     raise HTTPException(status_code=404, detail="Memo not found")
@@ -352,7 +353,7 @@ def move_take(memo_id: str, take_id: str, change: MoveTake, x_keeper_owner: Owne
         for index, row in enumerate(takes, 1):
             row["variant"] = f"Take {index}"
     _save_artifact(directory, "songmap.json", songmap)
-    return songmap
+    return public_artifact(songmap, metadata.get("original_filename", ""))
 
 
 @app.get("/api/memos/{memo_id}/canvas")

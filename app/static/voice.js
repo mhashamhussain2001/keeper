@@ -28,19 +28,31 @@
     for (const character of value) seed = Math.imul(seed ^ character.charCodeAt(0), 16777619);
     return seed >>> 0;
   }
-  function personality(id, event, index) {
+  function personality(id, event, index, memory = {recent: [], last: new Map()}) {
     const d = event.data, section = d.section || "ideas";
-    const values = {...d, duration: time(d.duration_s), time: time(d.start), Section: section.charAt(0).toUpperCase() + section.slice(1)};
-    const pick = key => (bank[key] || bank.none)[hash(`${id}:${index}:${key}`) % (bank[key] || bank.none).length].replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? ""));
+    const values = {...d, heard: String(d.heard || "").replace(/[.,!?\s]+$/g, ""), duration: time(d.duration_s), time: time(d.start), Section: section.charAt(0).toUpperCase() + section.slice(1)};
+    const chosen = [], recent = memory.recent.flat();
+    const pick = key => {
+      const choices = bank[key] || bank.none, offset = hash(`${id}:${index}:${key}`) % choices.length;
+      const template = Array.from({length: choices.length}, (_, i) => choices[(offset + i) % choices.length])
+        .find(candidate => !recent.includes(candidate) && memory.last.get(key) !== candidate);
+      chosen.push(template); memory.last.set(key, template);
+      return template.replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? ""));
+    };
     let line = pick(event.type === "spark_result" ? d.intent : event.type);
     if (event.type === "spark_result" && d.target === "next") line += " " + pick("next");
     if (event.type === "spark_result" && d.scope === "last_attempt") line += " " + pick("last_attempt");
+    memory.recent.push(chosen); memory.recent = memory.recent.slice(-3);
     return line;
+  }
+  function createPersonality(id) {
+    const memory = {recent: [], last: new Map()};
+    return (event, index) => personality(id, event, index, memory);
   }
   function process(event) {
     const d = event.data, span = `${time(d.start)}–${time(d.end)}`;
     switch (event.type) {
-      case "received": return `input   ${d.filename} · ${time(d.duration_s)} · ${d.sample_rate} Hz`;
+      case "received": return `input   ${time(d.duration_s)}${d.sample_rate > 0 && d.channels > 0 ? ` · ${d.sample_rate} Hz ${d.channels === 1 ? "mono" : d.channels === 2 ? "stereo" : d.channels + " channels"}` : ""}`;
       case "loading_done": return `loaded  ${d.duration_s.toFixed(2)} s · mono float32`;
       case "ast_start": return `ast     ${d.n_windows} windows · ${d.window_s} s window · ${d.hop_s} s hop · ${d.device}${d.cached ? " · cached scores" : ""}`;
       case "ast_progress": return `ast     ${d.windows_done} windows scored`;
@@ -52,5 +64,5 @@
       default: return event.type;
     }
   }
-  globalThis.KeeperVoice = {personality, process, bank};
+  globalThis.KeeperVoice = {personality, createPersonality, process, bank};
 })();

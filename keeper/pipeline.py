@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import subprocess
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from collections.abc import Callable
@@ -13,6 +14,7 @@ import numpy as np
 import pandas as pd
 
 from keeper.audio_io import load_audio, rms_db_per_frame
+from keeper.audio_metadata import audio_format
 from keeper.config import SCORE_GROUPS, KeeperConfig
 from keeper.cut import cut_takes
 from keeper.export import export_clips
@@ -92,7 +94,14 @@ def _run_pipeline(
             y = y[:round(duration_s * config.sample_rate)]
         rms = rms_db_per_frame(y, config.sample_rate, config.hop_s)
         duration = float(len(y) / config.sample_rate)
-    reporter.emit("received", filename=source.name, duration_s=duration, sample_rate=config.sample_rate)
+    native = {}
+    if reporter.callback is not None and rms_json is None:
+        try:
+            sample_rate, channels = audio_format(source)
+            native = {"sample_rate": sample_rate, "channels": channels}
+        except (OSError, ValueError, IndexError, KeyError, subprocess.SubprocessError):
+            pass  # Missing native metadata must never substitute the 16 kHz working rate.
+    reporter.emit("received", duration_s=duration, **native)
     reporter.emit("loading_done", duration_s=duration)
     if progress is not None:
         progress("scoring audio (cached AST)" if scores_csv is not None else "scoring audio (AST)")

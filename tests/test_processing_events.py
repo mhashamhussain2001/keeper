@@ -9,6 +9,7 @@ from typing import Any
 
 import numpy as np
 import pytest
+import soundfile as sf
 
 from app.event_status import EventStatus
 from keeper import pipeline
@@ -36,7 +37,30 @@ def test_event_order_and_results_unchanged(tmp_path: Path) -> None:
     assert kinds.count("take_cut") == 2
     assert [e["t"] for e in events] == sorted(e["t"] for e in events)
     assert events[0]["data"]["sample_rate"] == 16000
+    assert events[0]["data"]["channels"] == 1 and "filename" not in events[0]["data"]
     assert all(e["data"]["cached"] is False for e in events if e["type"] == "spark_result")
+
+
+@pytest.mark.parametrize("available", [True, False])
+def test_received_uses_native_metadata_or_omits_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, available: bool,
+) -> None:
+    """Return None after checking stereo native rates never become the mono 16 kHz working rate."""
+    audio, scores, labels = _synthetic_inputs(tmp_path)
+    samples, _ = sf.read(audio, dtype="float32")
+    stereo = np.repeat(samples[:, None], 2, axis=1).repeat(3, axis=0)
+    sf.write(audio, stereo, 48000)
+    if not available:
+        def unavailable(source: Path) -> tuple[int, int]:
+            """Return no metadata because this decoder has no native-format probe."""
+            raise OSError("No probe")
+
+        monkeypatch.setattr(pipeline, "audio_format", unavailable)
+    events: list[dict[str, Any]] = []
+    pipeline.run_pipeline(audio, MockLabelParser(labels), tmp_path / "native", scores_csv=scores,
+                          no_export=True, on_event=events.append)
+    received = events[0]["data"]
+    assert received == ({"duration_s": 30.0, "sample_rate": 48000, "channels": 2} if available else {"duration_s": 30.0})
 
 
 def test_failed_event_and_cli_without_callback(tmp_path: Path) -> None:

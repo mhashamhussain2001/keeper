@@ -1,6 +1,7 @@
 """Scripted observations exercise the live log, replay, and editor reveal without inference."""
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -11,10 +12,10 @@ from playwright.sync_api import Page, expect
 def scripted_events() -> list[dict[str, Any]]:
     """Return a representative ordered event stream containing the parser's exact heard text."""
     values = [
-        ("received", {"filename": "ideas.wav", "duration_s": 376.0, "sample_rate": 16000}),
+        ("received", {"duration_s": 376.0, "sample_rate": 44100, "channels": 2}),
         ("loading_done", {"duration_s": 376.0}),
         ("ast_start", {"n_windows": 752, "window_s": 2, "hop_s": .5, "device": "T4 GPU"}),
-        ("ast_progress", {"windows_done": 384}),
+        *[("ast_progress", {"windows_done": done}) for done in [0, 96, 192, 288, 384, 480, 576, 672, 752]],
         ("regions_found", {"n_singing": 2, "n_speech": 2, "total_singing_s": 372.0,
                            "speech_regions": [{"start": 39, "end": 41}, {"start": 375, "end": 376}]}),
         ("spark_result", {"start": 375.0, "end": 376.0, "heard": "That last one, chorus B", "intent": "file",
@@ -53,7 +54,7 @@ def test_scripted_upload_poll_log_and_screenshots(editor: Page) -> None:
 
         polls.append(monotonic())
         done = len(polls) >= 3
-        route.fulfill(json={"state": "done" if done else "running", "events": events if done else events[:6]})
+        route.fulfill(json={"state": "done" if done else "running", "events": events if done else events[:-3]})
 
     editor.route("**/api/memos/fixture-memo/status", status)
     # Browser-decodable, genuine short WAV; model results here deliberately come from the script.
@@ -63,11 +64,14 @@ def test_scripted_upload_poll_log_and_screenshots(editor: Page) -> None:
 
     stream = io.BytesIO()
     sf.write(stream, np.full(16000, .2, dtype=np.float32), 16000, format="WAV")
-    editor.locator("#file").set_input_files({"name": "ideas.wav", "mimeType": "audio/wav", "buffer": stream.getvalue()})
-    expect(editor.locator("#memo-meta")).to_have_text("ideas.wav")
-    expect(editor.locator(".listening-entry[data-event=spark_result]")).to_have_count(1)
-    expect(editor.locator(".listening-entry[data-event=spark_result] .listening-process")).to_contain_text('"That last one, chorus B"')
+    editor.locator("#file").set_input_files({"name": "123 Example Street 4.m4a", "mimeType": "audio/mp4", "buffer": stream.getvalue()})
+    expect(editor.locator("#memo-meta")).to_have_text(re.compile(r"[A-Z][a-z]{2} \d{1,2} · \d{1,2}:\d{2} [AP]M"))
+    expect(editor.locator(".listening-entry[data-event=spark_result] .listening-process").first).to_contain_text('"That last one, chorus B"')
     expect(editor.locator(".listening-voice").first).to_be_visible()
+    assert "Example Street" not in editor.content()
+    expect(editor.locator(".listening-entry[data-event=received] .listening-process")).to_have_text("input   6:16 · 44100 Hz stereo")
+    expect(editor.locator(".listening-entry[data-event=ast_start]")).to_have_count(1)
+    expect(editor.locator(".listening-entry[data-event=ast_progress]")).to_have_count(0)
     assert editor.locator(".listening-pin").count() >= 1
     folder = Path("outputs/ui_screens"); folder.mkdir(parents=True, exist_ok=True)
     editor.screenshot(path=str(folder / "processing_mid_log.png"))
@@ -88,7 +92,7 @@ def test_replay_repeatability_skip_and_final_dom(editor: Page, skip: str) -> Non
     before = fingerprint(editor)
     if skip == "reduced": editor.emulate_media(reduced_motion="reduce")
     editor.evaluate("void KeeperProcessing.replay()")
-    editor.wait_for_function("document.querySelectorAll('.listening-entry').length===9")
+    editor.wait_for_function("document.querySelectorAll('.listening-entry').length===8")
     first = editor.locator(".listening-voice").all_text_contents()
     if skip in ("Escape", "Space"):
         editor.keyboard.press(skip)
@@ -162,3 +166,80 @@ def test_failed_upload_retains_real_failure_log(editor: Page) -> None:
     expect(editor.locator(".listening-process")).to_have_text("failed  Decoder unavailable")
     expect(editor.locator(".listening-voice")).to_be_visible()
     expect(editor.locator("#upload")).to_be_enabled()
+
+
+def test_ast_row_updates_only_at_real_milestones(editor: Page) -> None:
+    """Return None after checking one stable progress row, exact counts, quarter captions and settled metadata."""
+    editor.emulate_media(reduced_motion="reduce")
+    editor.evaluate("""events => {
+      window.polishSession=new KeeperProcessing.Listening('polish',state.data.peaks,true);
+      polishSession.feed({state:'running',events:events.slice(0,3)});
+      window.polishEvents=events.slice(0,3);
+    }""", scripted_events())
+    row = editor.locator(".listening-entry[data-event=ast_start]")
+    expect(row.locator(".listening-process")).to_have_text("ast     0 / 752 windows")
+    initial = row.locator(".listening-voice").inner_text()
+    captions = []
+    previous_caption = ""
+    for done in [0, 96, 192, 288, 384, 480, 576, 672, 752]:
+        editor.evaluate("""done => {
+          polishEvents.push({t:done,type:'ast_progress',data:{windows_done:done}});
+          polishSession.feed({state:'running',events:polishEvents});
+        }""", done)
+        expect(row).to_have_count(1)
+        expect(editor.locator(".listening-entry[data-event=ast_progress]")).to_have_count(0)
+        expect(row.locator(".listening-voice")).to_have_text(initial)
+        expect(row.get_by_role("progressbar")).to_have_attribute("aria-valuenow", str(done))
+        caption = row.locator(".listening-caption").inner_text()
+        if done in [192, 384, 576]:
+            assert caption and caption != previous_caption
+            captions.append(caption)
+        else:
+            assert caption == previous_caption
+        previous_caption = caption
+        if done == 96:
+            expect(row.locator(".listening-process")).to_have_text("ast     96 / 752 windows")
+            folder = Path("outputs/ui_screens"); folder.mkdir(parents=True, exist_ok=True)
+            editor.screenshot(path=str(folder / "processing_ast_progress.png"))
+        if done < 752:
+            expect(row.locator(".listening-process")).to_have_text(f"ast     {done} / 752 windows")
+    assert len(set(captions)) == 3
+    expect(row.locator(".listening-process")).to_have_text("ast     752 windows · 2 s window · 0.5 s hop · T4 GPU")
+    assert editor.evaluate("document.querySelector('.listening-progress-fill').style.transform") == "scaleX(1)"
+    editor.evaluate("polishSession.cancel()")
+
+
+def test_personality_punctuation_repeat_window_and_native_input(editor: Page) -> None:
+    """Return None after checking deterministic nonrepeating templates and exact observed heard text."""
+    result = editor.evaluate("""() => {
+      const events=Array.from({length:60},(_,i)=>({type:i%7===0?'take_cut':'spark_result',
+        data:i%7===0?{name:'Verse 1',start:0,end:1}:{heard:'Okay, that is a verse. , ! ?  ',intent:'file',section:'verse',start:0,end:1}}));
+      const render=id=>{const voice=KeeperVoice.createPersonality(id);return events.map((event,i)=>voice(event,i));};
+      return {events,first:render('memo-a'),repeat:render('memo-a'),other:render('memo-b'),
+        exact:KeeperVoice.process(events[1]),
+        native:KeeperVoice.process({type:'received',data:{filename:'123 Example Street 4.m4a',duration_s:376,sample_rate:44100,channels:2}}),
+        legacy:KeeperVoice.process({type:'received',data:{filename:'123 Example Street 4.m4a',duration_s:376,sample_rate:16000}})};
+    }""")
+    assert result["first"] == result["repeat"] and result["first"] != result["other"]
+    previous: dict[str, str] = {}
+    for index, line in enumerate(result["first"]):
+        kind = result["events"][index]["type"]
+        assert line != previous.get(kind) and line not in result["first"][max(0, index - 3):index]
+        previous[kind] = line
+        if kind == "spark_result":
+            assert '"Okay, that is a verse".' in line
+    assert '"Okay, that is a verse. , ! ?  "' in result["exact"]
+    assert result["native"] == "input   6:16 · 44100 Hz stereo" and result["legacy"] == "input   6:16"
+
+
+def test_legacy_replay_does_not_render_stored_filename(editor: Page) -> None:
+    """Return None after checking even raw legacy replay events never put uploaded addresses in the DOM."""
+    events = scripted_events()
+    events[0]["data"] = {"filename": "123 Example Street 4.m4a", "duration_s": 376.0, "sample_rate": 16000}
+    mock_status(editor, events)
+    editor.evaluate("void KeeperProcessing.replay()")
+    expect(editor.locator(".listening-entry[data-event=received] .listening-process")).to_have_text("input   6:16")
+    assert "Example Street" not in editor.content()
+    editor.keyboard.press("Escape")
+    editor.wait_for_function("KeeperProcessing.active===null")
+    assert "Example Street" not in editor.content()

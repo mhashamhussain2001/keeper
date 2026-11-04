@@ -1599,3 +1599,152 @@ Implementation choices not specified in the prompt:
   Chromium's mobile viewport is covered. Existing CUDA and two local M4A
   decoder checks require a CUDA device/local ffmpeg respectively. Source audio,
   .env and data were not committed; generated evidence and tokens stay ignored.
+
+## 2026-11-03 — Processing log privacy and polish
+
+- Read AGENTS.md and private/prompts/codex_prompt_processing_polish.md. Removed
+  filenames from new received events and the processing header, which now shows
+  local date/time. Public metadata no longer includes original_filename; served
+  status/replay, detail and take-update artifacts recursively omit filename,
+  original_filename and source_file, including legacy/showcase events. Saved
+  private artifacts remain intact. Native format inspection has its own keeper
+  module and is shared with original-quality exports; unavailable native metadata
+  is omitted rather than reported as the 16 kHz mono working format.
+- Quoted personality templates trim trailing punctuation/whitespace while process
+  lines preserve exact heard text. Memo-seeded selection excludes templates used
+  in the previous three displayed observations and the preceding selection for
+  each copy type. AST uses one stable row with actual window counts, a 2px bar
+  animated only with scaleX (180ms linear; no transition under reduced motion),
+  replacement captions at 25/50/75 percent, and the full format/device summary
+  when complete. Stored AST progress events, final tokens, icons, shared player,
+  pipeline algorithms and thresholds are unchanged. No dependencies added.
+- Added offline API tests uploading 123 Example Street 4.m4a, plus legacy private
+  and showcase variants, covering list/detail/status/canvas/take updates,
+  recording/clip/stems download headers, ZIP entry names and songmap.txt. Browser
+  regressions cover the processing date, DOM privacy during upload and raw legacy
+  replay, one AST row, exact counts, quarter captions, native/unknown format,
+  punctuation, deterministic repeat avoidance and unchanged process text. The
+  focused run had 83 passes and two existing decoder skips; one timing-sensitive
+  assertion expecting exactly one Spark row was changed to assert the first
+  result directly and passed independently in 13.41s.
+- Regenerated and visually inspected outputs/ui_screens/processing_mid_log.png,
+  processing_mid_reveal.png and processing_ast_progress.png; the latter shows
+  the actual partial-count state. Extended scripts/verify_processing.py to use
+  the address-like upload name, inspect every browser API JSON response and DOM
+  during processing/replay, verify stems and a real WAV download filename, and
+  compare the entire upload/replay log. Evidence stays under ignored outputs.
+
+- The initial full run found one older editor assertion requiring source_file in
+  the public take-update response (316 passed, one failed, three skipped). Updated
+  it to assert that source_file remains on disk and is absent from the response;
+  all three editor API tests passed. No application changes were needed. Final
+  clean full suite, .venv\Scripts\python.exe -m pytest -q --browser chromium:
+  **317 passed, 3 skipped, 11 warnings in 469.36s (0:07:49)**. Skips remain the existing CUDA test and
+  two local M4A decoder tests requiring ffmpeg; decoder warnings are unchanged.
+  Transcript: outputs/processing_polish_full_suite_final.txt.
+- Redeployed via .venv\Scripts\python.exe -m modal deploy modal_app.py with
+  process-only UTF-8 settings; Modal reported 52.415s. Production:
+  https://mhashamhussain2001--keeper-web.us-east.modal.run . All 17 deployed HTML/CSS/JS assets exactly match local hashes.
+  Replayed pre-change memo be0981af2bc3447ba947bd8469599ce2 using its existing
+  private owner token: its saved pre-change events contained filename, while the
+  deployed API and replay DOM do not. Legacy input omits its unverified 16 kHz
+  rate. Menu Space skip preserves player generation/state; reduced motion leaves
+  no animations. No public showcase memos were available in the live anonymous
+  list; legacy showcase scrubbing is covered by the offline API regressions.
+  Record: outputs/processing_polish_deployment.json. No existing live memo data
+  or showcase visibility was changed.
+- Uploaded real data/test_2.m4a through production Chromium under the client name
+  123 Example Street 4.m4a. Memo 3ca703fc0ed14c528a9c8bc8717d5b4f: 376.83s,
+  native 48000 Hz/1 channel, 754 T4 windows,
+  eight Spark results, 33 stored events and 23 displayed rows,
+  ten takes/five sections. Pipeline 78.08s; complete browser,
+  download and replay verification 181.42s. All
+  66 captured API JSON responses, processing/replay
+  DOM, recording/clip/stems headers, ZIP entry names, songmap.txt and the actual
+  Verse 1.wav download filename passed the address privacy check. The generated
+  preview WAV was 569,644 bytes; the native stems ZIP was
+  28,217,445 bytes. Upload and replay log text match exactly;
+  zero browser or privacy errors. Evidence: outputs/processing_polish_upload/
+  report.json, actual_log.txt, live_mid_log.png (96 / 754 windows),
+  live_mid_reveal.png (slices in flight), live_final_editor.png,
+  live_final_replay.png and live_legacy_replay.png. Visually inspected the live
+  log and reveal screenshots. Tokens and downloaded audio stay ignored.
+- All requested implementation, testing, screenshots, redeployment, real upload
+  and session-log steps are complete. Real phone hardware remains unavailable;
+  browser mobile/reduced-motion checks pass. The three environment-dependent
+  tests above remain skipped locally. git diff --check passes; no dependencies,
+  pipeline thresholds, final tokens, icons or single-player behavior changed.
+
+Exact live log text (also reproduced by replay):
+
+```text
+Chair pulled up. Memo received.
+input   6:16 · 48000 Hz mono
+
+All 6:16, ready to listen.
+loaded  376.83 s · mono float32
+
+A little order for the room.
+ast     754 windows · 2 s window · 0.5 s hop · T4 GPU
+Following the session, one window at a time.
+
+The map's taking shape. 8 spoken moments to check.
+regions 20 music · 8 speech · 307.0 s music
+
+"Okay, that's a verse". Verse it is.
+spark   0:39–0:40  "Okay, that's a verse"  → file · verse · previous · whole · 0.98
+
+Letting that spoken thought be a thought.
+spark   2:30–2:33  "Okay, what if the second line was about the drive home?"  → none · unsorted · previous · whole · 0.96
+
+You said "Chorus, the higher one". Filing it under Chorus.
+spark   1:25–1:27  "Chorus, the higher one"  → file · chorus · previous · whole · 0.95
+
+No spoken instruction in that sound.
+spark   2:36–2:36  "wee"  → noise · unsorted · previous · whole · 0.60
+
+Keeper of the day: 4:38.
+spark   4:38–4:40  "Keep that one"  → keep · unsorted · previous · whole · 0.98
+
+Your words: "Okay, bridge idea". Your folder: Bridge. Called it before you sang it. Respect.
+spark   4:45–4:47  "Okay, bridge idea"  → file · bridge · next · whole · 0.95
+
+You said "That's chorus B". Filing it under Chorus.
+spark   6:14–6:15  "That's chorus B"  → file · chorus · previous · whole · 0.98
+
+"Idea for a bridge". Bridge it is. A label for what comes next. Got it.
+spark   4:49–4:50  "Idea for a bridge"  → file · bridge · next · whole · 0.92
+
+Giving Verse 1 a place on the map.
+cut     Verse 1  0:20–0:38  (17.8 s)
+
+One slice for Chorus 1.
+cut     Chorus 1  0:42–1:23  (40.8 s)
+
+Chorus 2, ready for its own row.
+cut     Chorus 2  5:10–6:14  (63.5 s)
+
+Chopping Idea 1. Leaving a little air on each side.
+cut     Idea 1  3:22–4:38  (76.5 s)
+
+Giving Bridge 1 a place on the map.
+cut     Bridge 1  4:54–5:06  (11.3 s)
+
+One slice for Unlabeled 1.
+cut     Unlabeled 1  1:32–1:38  (6.3 s)
+
+Unlabeled 2, ready for its own row.
+cut     Unlabeled 2  1:43–2:02  (18.3 s)
+
+Chopping Unlabeled 3. Leaving a little air on each side.
+cut     Unlabeled 3  2:10–2:30  (19.8 s)
+
+Giving Unlabeled 4 a place on the map.
+cut     Unlabeled 4  2:39–3:17  (38.3 s)
+
+One slice for Unlabeled 5.
+cut     Unlabeled 5  4:42–4:43  (1.3 s)
+
+10 takes, 5 sections. Your song's waiting.
+done    10 takes · 5 sections · 78.08 s
+```

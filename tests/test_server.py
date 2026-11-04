@@ -230,6 +230,65 @@ def test_upload_runs_pipeline_offline_and_returns_playable_unlabeled_take(
     assert memo_id in [row["id"] for row in request("GET", "/api/memos").json()]
 
 
+@pytest.mark.parametrize("legacy_showcase", [None, False, True])
+def test_original_filename_stays_private_in_every_response(
+    memo: Path, monkeypatch: pytest.MonkeyPatch, legacy_showcase: bool | None,
+) -> None:
+    """Return None after checking uploads and legacy private/showcase artifacts cannot expose an address."""
+    from zipfile import ZipFile
+
+    monkeypatch.setattr(pipeline, "ASTScorer", MusicScorer)
+    monkeypatch.setattr(server, "start_processing", lambda memo_id: processing.process_memo(memo_id, server.settings))
+    audio = io.BytesIO()
+    sf.write(audio, np.full((4 * 44100, 2), .1, dtype=np.float32), 44100, format="WAV")
+    response = upload("123 Example Street 4.m4a", audio.getvalue())
+    assert response.status == 201 and b"Example Street" not in response.body
+    memo_id = response.json()["memo_id"]
+    directory = memo.parent / memo_id
+    status_path = directory / "status.json"
+    stored_status = json.loads(status_path.read_text())
+    received = next(event["data"] for event in stored_status["events"] if event["type"] == "received")
+    assert received == {"duration_s": 4.0, "sample_rate": 44100, "channels": 2}
+    if legacy_showcase is not None:
+        for event in stored_status["events"]:
+            event["data"]["filename"] = "123 Example Street 4.m4a"
+        stored_status["events"][0]["filename"] = "123 Example Street 4.m4a"
+        status_path.write_text(json.dumps(stored_status))
+        metadata = json.loads((directory / "meta.json").read_text())
+        metadata["showcase"] = legacy_showcase
+        save_meta(directory, metadata)
+        songmap = json.loads((directory / "songmap.json").read_text())
+        songmap["source_file"] = "123 Example Street 4.m4a"
+        for takes in songmap["sections"].values():
+            for take in takes:
+                take["source_file"] = "123 Example Street 4.m4a"
+        (directory / "songmap.json").write_text(json.dumps(songmap))
+    paths = ["/api/memos", f"/api/memos/{memo_id}", f"/api/memos/{memo_id}/status", f"/api/memos/{memo_id}/canvas"]
+    for path in paths:
+        reply = request("GET", path)
+        assert reply.status == 200
+        assert b"Example Street" not in reply.body and b"original_filename" not in reply.body
+        assert b'"filename"' not in reply.body and b'"source_file"' not in reply.body
+    detail = request("GET", f"/api/memos/{memo_id}").json()
+    take = next(take for takes in detail["songmap"]["sections"].values() for take in takes)
+    for path in [take["clip_url"], f"/api/memos/{memo_id}/recording", f"/api/memos/{memo_id}/export/stems"]:
+        reply = request("GET", path)
+        assert reply.status == 200 and "Example Street" not in unquote(str(reply.headers))
+        if path.endswith("/stems"):
+            with ZipFile(io.BytesIO(reply.body)) as archive:
+                assert "Example Street" not in str(archive.namelist())
+                assert b"Example Street" not in archive.read("songmap.txt")
+    if legacy_showcase:
+        for path in paths[:3]:
+            assert b"Example Street" not in request("GET", path, owner=None).body
+    else:
+        reply = request("PATCH", f"/api/memos/{memo_id}/takes/{take['id']}", b'{"section":"verse"}', "application/json")
+        assert reply.status == 200 and b"Example Street" not in reply.body and b'"source_file"' not in reply.body
+    if legacy_showcase is not None:
+        assert "Example Street" in status_path.read_text()  # Scrubbing must not rewrite history.
+    assert "123 Example Street 4.m4a" in (directory / "upload.json").read_text()
+
+
 def test_upload_pipeline_failure_returns_json_without_listing_partial_memo(
     memo: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -5,7 +5,6 @@ import logging
 import os
 from collections.abc import Callable
 from threading import Thread
-from typing import Any
 
 from dotenv import load_dotenv
 
@@ -41,12 +40,6 @@ def process_memo(memo_id: str, settings: Settings, commit: Callable[[], None] | 
             write_peaks(source, directory)
         status.metadata["peaks"] = json.loads((directory / "peaks.json").read_text(encoding="utf-8"))["peaks"]
 
-        def event(observation: dict[str, Any]) -> None:
-            """Return None after attaching the original display filename to real pipeline observations."""
-            if observation["type"] == "received":
-                observation["data"]["filename"] = manifest.get("original_filename", source.name)
-            status.event(observation)
-
         if parser_name == "spark":
             parser = MuseSparkLabelParser(directory / "spark_cache.json", KeeperConfig().max_spark_calls,
                                           prompt_v2=KeeperConfig().spark_prompt_v2)
@@ -56,7 +49,7 @@ def process_memo(memo_id: str, settings: Settings, commit: Callable[[], None] | 
             parser = MockLabelParser(mock)
         cache = directory / "window_scores.csv"
         run_pipeline(source, parser, directory, scores_csv=cache if cache.exists() else None,
-                     progress=status.progress, on_event=event)
+                     progress=status.progress, on_event=status.event)
         status.finish("done")
     except Exception as exc:
         logger.exception("Processing failed for memo %s", memo_id)

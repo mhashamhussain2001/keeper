@@ -46,7 +46,7 @@ def owns(metadata: dict[str, Any], owner: str | None) -> bool:
 
 def public_meta(metadata: dict[str, Any], owner: str | None) -> dict[str, Any]:
     """Return display metadata and ownership status without disclosing the owner token."""
-    return {key: metadata.get(key) for key in ("title", "original_filename", "created_at", "showcase")} | {"owned": owns(metadata, owner)}
+    return {key: metadata.get(key) for key in ("title", "created_at", "showcase")} | {"owned": owns(metadata, owner)}
 
 
 def migrate_memos(settings: Settings) -> list[str]:

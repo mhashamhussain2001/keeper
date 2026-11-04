@@ -13,7 +13,9 @@ def test_move_take_stable_id_and_renumber(memo: Path) -> None:
     take=response.json()["sections"]["verse"][0]
     assert (take["id"],take["variant"],take["section"])==("chorus-a","Take 1","verse")
     assert take["clip_path"]=="clips/chorus a.wav"
-    assert json.loads((memo/"songmap.json").read_text())["sections"]["verse"][0]==take
+    stored = json.loads((memo/"songmap.json").read_text())["sections"]["verse"][0]
+    assert stored.pop("source_file") == "memo.wav"
+    assert "source_file" not in take and stored == take
     assert request("PATCH","/api/memos/demo/takes/chorus-a",b'{"section":"chorus"}',"application/json",owner=OWNER_B).status==404
 
 
