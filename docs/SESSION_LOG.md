@@ -1464,3 +1464,5 @@ Implementation choices not specified in the prompt:
   git diff --check passes. No pipeline, thresholds, dependencies, scores or live
   memo data changed. Optional take-row waveforms were not added; real touch/iOS
   hardware verification remains manual.
+
+2026-11-03: Fixed iPhone voice-memo uploads with the exact audio/* plus extension picker filter in the shared sidebar/collapsed/mobile/empty-state input and MIME-or-extension backend admission; decoding, 50 MiB, and 10-minute validation unchanged. Added real ffmpeg-generated M4A, fake-M4A, MIME/extension, and four-layout Playwright regressions. Full suite: 281 passed, 3 skipped (CUDA and two M4A cases because local ffmpeg is absent), 11 decoder warnings, 243.01s. Redeployed with the venv's modal deploy modal_app.py after a Windows console encoding error was resolved using process-only UTF-8 settings; live page returned HTTP 200 with the exact accept filter. No dependencies added.

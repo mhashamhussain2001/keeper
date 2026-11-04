@@ -3,6 +3,8 @@
 import asyncio
 import io
 import json
+import shutil
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterator
@@ -183,11 +185,12 @@ def test_absolute_clip_traversal_is_rejected(memo: Path) -> None:
     assert request("GET", f"/api/memos/demo/clips/{quote(str(outside), safe='')}").status == 404
 
 
-def upload(filename: str, audio: bytes, title: str | None = None, owner: str | None = OWNER_A) -> Response:
+def upload(filename: str, audio: bytes, title: str | None = None, owner: str | None = OWNER_A,
+           content_type: str = "audio/wav") -> Response:
     """Return the multipart upload response for the supplied filename and audio bytes."""
     boundary = "keeper-test-upload"
     body = (f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="{filename}"\r\n'
-            f"Content-Type: audio/wav\r\n\r\n").encode() + audio + b"\r\n"
+            f"Content-Type: {content_type}\r\n\r\n").encode() + audio + b"\r\n"
     if title is not None:
         body += f'--{boundary}\r\nContent-Disposition: form-data; name="title"\r\n\r\n{title}\r\n'.encode()
     body += f"--{boundary}--\r\n".encode()
@@ -247,8 +250,69 @@ def test_upload_pipeline_failure_returns_json_without_listing_partial_memo(
 
 def test_upload_rejects_unsupported_files(memo: Path) -> None:
     """Return None after checking unsupported extensions fail before pipeline processing."""
-    response = upload("notes.txt", b"text")
+    response = upload("notes.txt", b"text", content_type="text/plain")
     assert response.status == 400 and "audio file" in response.json()["detail"]
+
+
+@pytest.mark.parametrize("content_type", ["audio/x-m4a", "application/octet-stream"])
+def test_upload_accepts_real_m4a(memo: Path, monkeypatch: pytest.MonkeyPatch, content_type: str) -> None:
+    """Return None after checking real AAC voice memos decode and queue with iOS content types."""
+    from unittest.mock import Mock
+
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg is None:
+        pytest.skip("ffmpeg is required to generate a real M4A voice memo")
+    source = memo.parent / "voice.m4a"
+    subprocess.run([ffmpeg, "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i",
+                    "sine=frequency=440:sample_rate=16000:duration=0.25", "-ac", "1",
+                    "-c:a", "aac", str(source)], check=True, capture_output=True, timeout=30)
+    start = Mock()
+    monkeypatch.setattr(server, "start_processing", start)
+    response = upload(source.name, source.read_bytes(), content_type=content_type)
+    assert response.status == 201
+    memo_id = response.json()["memo_id"]
+    manifest = json.loads((memo.parent / memo_id / "upload.json").read_text())
+    assert 0.0 < manifest["duration_s"] < 1.0
+    assert (server.settings.uploads_root / manifest["filename"]).read_bytes() == source.read_bytes()
+    start.assert_called_once_with(memo_id)
+
+
+@pytest.mark.parametrize("content_type", ["audio/x-m4a", "application/octet-stream", "text/plain"])
+def test_upload_rejects_fake_m4a(memo: Path, monkeypatch: pytest.MonkeyPatch, content_type: str) -> None:
+    """Return None after checking a renamed text file fails decoding before processing starts."""
+    from unittest.mock import Mock
+
+    start = Mock()
+    monkeypatch.setattr(server, "start_processing", start)
+    response = upload("fake.m4a", b"This is text, not audio.", content_type=content_type)
+    assert response.status == 400
+    assert response.json()["detail"] == "Cannot decode this audio file; upload valid audio"
+    start.assert_not_called()
+    assert not list(server.settings.uploads_root.iterdir())
+
+
+@pytest.mark.parametrize("content_type", ["audio/x-m4a", "audio/m4a", "audio/mp4", "audio/aac",
+                                         "audio/x-caf", "audio/custom", "application/octet-stream"])
+def test_upload_accepts_audio_content_type_without_known_extension(
+    memo: Path, monkeypatch: pytest.MonkeyPatch, content_type: str,
+) -> None:
+    """Return None after checking audio MIME types and generic binary uploads reach the decoder."""
+    monkeypatch.setattr(server, "start_processing", lambda memo_id: None)
+    audio = io.BytesIO()
+    sf.write(audio, np.zeros(1600, dtype=np.float32), 16000, format="WAV")
+    assert upload("voice.unknown", audio.getvalue(), content_type=content_type).status == 201
+
+
+@pytest.mark.parametrize("extension", [".m4a", ".mp4", ".aac", ".caf", ".mp3", ".wav",
+                                       ".aif", ".aiff", ".flac", ".ogg", ".opus", ".webm"])
+def test_upload_accepts_audio_extension_with_unreliable_content_type(
+    memo: Path, monkeypatch: pytest.MonkeyPatch, extension: str,
+) -> None:
+    """Return None after checking each picker extension permits valid audio despite its reported MIME type."""
+    monkeypatch.setattr(server, "start_processing", lambda memo_id: None)
+    audio = io.BytesIO()
+    sf.write(audio, np.zeros(1600, dtype=np.float32), 16000, format="WAV")
+    assert upload("voice" + extension.upper(), audio.getvalue(), content_type="text/plain").status == 201
 
 
 def test_static_home_page() -> None:

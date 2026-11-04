@@ -6,6 +6,31 @@ from playwright.sync_api import Page, expect
 import pytest
 
 
+@pytest.mark.parametrize("layout", ["sidebar", "collapsed", "mobile", "empty"])
+def test_every_upload_input_accepts_ios_voice_memos(editor: Page, layout: str) -> None:
+    """Return None after checking every upload input and picker entry point accepts iOS voice memos."""
+    if layout == "mobile":
+        editor.set_viewport_size({"width": 390, "height": 844})
+    elif layout == "collapsed":
+        editor.locator("#sidebar-toggle").click()
+        expect(editor.locator("html")).to_have_class("sidebar-collapsed")
+    elif layout == "empty":
+        editor.route("**/api/memos", lambda route: route.fulfill(json=[]))
+        editor.reload()
+        expect(editor.locator("#memo-title")).to_have_text("Your next song starts here")
+    inputs = editor.locator('input[type="file"]')
+    assert inputs.count() > 0
+    for upload_input in inputs.all():
+        accept = upload_input.get_attribute("accept").split(",")
+        assert "audio/*" in accept and ".m4a" in accept
+        expect(upload_input).to_have_attribute(
+            "accept", "audio/*,.m4a,.mp4,.aac,.caf,.mp3,.wav,.aif,.aiff,.flac,.ogg,.opus,.webm",
+        )
+    with editor.expect_file_chooser() as chooser:
+        editor.locator("#upload").click()
+    assert chooser.value.element.get_attribute("id") == "file"
+
+
 def test_theme_persists(editor: Page) -> None:
     """Return None after checking the theme control persists across a page reload."""
     editor.locator("#theme").click()

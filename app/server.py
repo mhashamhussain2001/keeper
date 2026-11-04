@@ -231,7 +231,9 @@ def upload_memo(file: Annotated[UploadFile, File()], x_keeper_owner: Owner = Non
         raise HTTPException(status_code=400, detail="A browser owner token is required to upload")
     filename = Path((file.filename or "memo.wav").replace("\\", "/")).name
     suffix = Path(filename).suffix.lower()
-    if suffix not in AUDIO_EXTENSIONS:
+    content_type = (file.content_type or "").split(";", 1)[0].strip().lower()
+    # audio/* includes iOS audio/x-m4a, audio/m4a, audio/mp4, audio/aac, and audio/x-caf.
+    if not (content_type.startswith("audio/") or content_type == "application/octet-stream" or suffix in AUDIO_EXTENSIONS):
         file.file.close()
         raise HTTPException(status_code=400, detail="Upload a WAV, MP3, M4A, FLAC, OGG, or AIFF audio file")
     if title is not None:

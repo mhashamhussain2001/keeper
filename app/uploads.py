@@ -8,7 +8,7 @@ import numpy as np
 
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 MAX_AUDIO_SECONDS = 600.0
-AUDIO_EXTENSIONS = {".wav", ".mp3", ".m4a", ".flac", ".ogg", ".aif", ".aiff"}
+AUDIO_EXTENSIONS = {".m4a", ".mp4", ".aac", ".caf", ".mp3", ".wav", ".aif", ".aiff", ".flac", ".ogg", ".opus", ".webm"}
 
 
 def save_upload(stream: BinaryIO, destination: Path) -> None:
