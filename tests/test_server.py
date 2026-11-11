@@ -408,6 +408,7 @@ def test_status_lifecycle_and_frontend_json(memo: Path, monkeypatch: pytest.Monk
     monkeypatch.setattr(pipeline, "ASTScorer", MusicScorer)
     if parser_name == "spark":
         monkeypatch.setenv("BASETEN_API_KEY", "synthetic-test-key")
+        monkeypatch.setenv("KEEPER_COMMAND_FREE", "0")
     monkeypatch.setattr(server, "start_processing", lambda memo_id: processing.process_memo(memo_id, server.settings))
     audio = io.BytesIO()
     sf.write(audio, np.full(64000, 0.1, dtype=np.float32), 16000, format="WAV")
@@ -597,3 +598,14 @@ def test_ownerless_legacy_memo_is_not_claimed_by_anonymous_callers(memo: Path) -
     assert request("GET", "/api/memos", owner=None).json() == []
     assert request("GET", "/api/memos/demo", owner=None).status == 404
     assert request("GET", "/api/memos/demo", owner=OWNER_A).status == 404
+
+
+def test_command_free_splits_takes_at_short_pause(memo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Return None after checking a two-second pause separates two takes without any spoken command."""
+    monkeypatch.setattr(pipeline, "ASTScorer", MusicScorer)
+    monkeypatch.setattr(server, "start_processing", lambda memo_id: processing.process_memo(memo_id, server.settings))
+    tone = np.full(5 * 16000, 0.1, dtype=np.float32)
+    audio = io.BytesIO()
+    sf.write(audio, np.concatenate([tone, np.zeros(2 * 16000, dtype=np.float32), tone]), 16000, format="WAV")
+    memo_id = upload("two.wav", audio.getvalue()).json()["memo_id"]
+    assert len(request("GET", f"/api/memos/{memo_id}").json()["songmap"]["sections"]["unlabeled"]) == 2

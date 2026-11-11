@@ -12,6 +12,8 @@ RMS_EPSILON = 1e-10
 DB_AMPLITUDE_FACTOR = 20.0
 MILLISECONDS_PER_SECOND = 1000.0
 MOCK_LABEL_ROUND_S = 0.5
+# ponytail: untuned guess; a pause this long ends an attempt when no commands are read. Fit on labelled memos.
+COMMAND_FREE_GAP_S = 1.5
 FRAME_KINDS = ("music", "speech", "silence")
 SCORE_GROUPS = {
     "singing": ("Singing", "Male singing", "Female singing", "Child singing", "Humming", "Rapping"),

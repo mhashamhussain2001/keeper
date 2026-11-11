@@ -45,9 +45,10 @@ def test_internal_instrument_frames_are_untouched() -> None:
     assert takes[0][0].note == "note" and takes[0][1].variant == "A"
 
 
-def test_all_instrument_take_is_dropped_with_exact_warning() -> None:
-    """Return None after checking takes with no threshold-level singing are dropped and logged."""
-    assert _trim([0.0] * 8) == ([], ["take dropped: no singing detected (0.0-4.0)"])
+def test_all_instrument_take_is_kept_whole() -> None:
+    """Return None after checking takes with no threshold-level singing survive untrimmed."""
+    takes, warnings = _trim([0.0] * 8)
+    assert (takes[0][0].start, takes[0][0].end) == (0.0, 4.0) and warnings == []
 
 
 def test_edge_trim_can_be_disabled_and_threshold_is_inclusive() -> None:
@@ -79,7 +80,7 @@ def test_new_config_rejects_invalid_thresholds(field: str, value: float) -> None
 
 
 def test_pipeline_trims_commanded_and_unlabeled_takes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Return None after checking trimming runs after both candidate sources and saves drop warnings."""
+    """Return None after checking instrumental commanded and unlabeled takes both survive trimming."""
     source = tmp_path / "fixture"
     source.mkdir()
     (source / "meta.json").write_text('{"duration_s": 13.0}', encoding="utf-8")
@@ -95,7 +96,5 @@ def test_pipeline_trims_commanded_and_unlabeled_takes(tmp_path: Path, monkeypatc
     result, _, warnings = pipeline.run_pipeline(source, MockLabelParser(commands), tmp_path / "result",
                                                cfg=KeeperConfig(edge_trim=True), scores_csv=scores,
                                                rms_json=rms, no_export=True)
-    assert result.sections == {}
-    assert warnings == ["take dropped: no singing detected (0.0-8.0)",
-                        "take dropped: no singing detected (9.0-13.0)"]
-    assert (tmp_path / "result" / "warnings.txt").read_text() == "\n".join(warnings) + "\n"
+    spans = {section: [(take.start, take.end) for take in takes] for section, takes in result.sections.items()}
+    assert spans == {"chorus": [(0.0, 8.0)], "unlabeled": [(9.0, 13.0)]} and warnings == []

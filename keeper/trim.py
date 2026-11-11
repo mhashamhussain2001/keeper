@@ -12,7 +12,7 @@ from keeper.types import CommandLabel, Take
 def trim_takes(
     takes: list[tuple[Take, CommandLabel]], frame_scores: pd.DataFrame, cfg: KeeperConfig,
 ) -> tuple[list[tuple[Take, CommandLabel]], list[str]]:
-    """Return edge-trimmed take/command pairs and warnings for takes with no detected singing."""
+    """Return take/command pairs trimmed to their singing, leaving instrumental takes whole, and no warnings."""
     if not cfg.edge_trim:
         return list(takes), []
     values = frame_scores[["start", "end", "singing"]].to_numpy(dtype=float)
@@ -26,7 +26,7 @@ def trim_takes(
         singing = values[(values[:, 0] < take.end) & (values[:, 1] > take.start)
                          & (values[:, 2] >= cfg.trim_singing_min)]
         if not len(singing):
-            warnings.append(f"take dropped: no singing detected ({take.start}-{take.end})")
+            result.append((take, label))  # Instrumental take: nothing to trim against, so keep it whole.
             continue
         start = float(max(take.start, singing[:, 0].min() - cfg.pre_roll_s))
         end = float(min(take.end, singing[:, 1].max() + cfg.post_roll_s))

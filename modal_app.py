@@ -14,6 +14,7 @@ POLICY_ENV = {name: os.environ.get(name, default) for name, default in {
     "KEEPER_DOCS_ENABLED": "0", "KEEPER_MAX_AUDIO_MINUTES": "30", "KEEPER_MAX_UPLOAD_MB": "150",
     "KEEPER_OWNER_DAILY_UPLOADS": "5", "KEEPER_OWNER_DAILY_MINUTES": "90",
     "KEEPER_DAILY_MINUTES": "240", "KEEPER_RETENTION_DAYS": "14", "KEEPER_UPLOADS_ENABLED": "1",
+    "KEEPER_COMMAND_FREE": "1",
 }.items()}
 
 

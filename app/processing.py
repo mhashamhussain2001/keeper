@@ -12,7 +12,7 @@ from app.storage import Settings, memo_directory
 from app.event_status import EventStatus
 from app.waveform import write_peaks
 from app.spark_budget import WebLabelParser
-from keeper.config import KeeperConfig
+from keeper.config import COMMAND_FREE_GAP_S, KeeperConfig
 from keeper.labels import MockLabelParser, MuseSparkLabelParser
 from keeper.pipeline import run_pipeline
 from keeper.events import EventReporter
@@ -30,7 +30,9 @@ def process_memo(memo_id: str, settings: Settings, commit: Callable[[], None] | 
 
     try:
         load_dotenv()
-        parser_name = "spark" if os.environ.get("BASETEN_API_KEY") else "mock"
+        # Command-free (default): no speech is sent anywhere; every music run between pauses or talking is a take.
+        command_free = os.environ.get("KEEPER_COMMAND_FREE", "1") != "0"
+        parser_name = "spark" if os.environ.get("BASETEN_API_KEY") and not command_free else "mock"
         status.metadata["parser"] = parser_name
         status.progress("loading audio")
         manifest = json.loads((directory / "upload.json").read_text(encoding="utf-8"))
@@ -50,6 +52,7 @@ def process_memo(memo_id: str, settings: Settings, commit: Callable[[], None] | 
             parser = MockLabelParser(mock)
         cache = directory / "window_scores.csv"
         run_pipeline(source, parser, directory, scores_csv=cache if cache.exists() else None,
+                     cfg=KeeperConfig(max_gap_s=COMMAND_FREE_GAP_S) if command_free else None,
                      progress=status.progress, on_event=status.event)
         status.finish("done")
     except Exception as exc:
