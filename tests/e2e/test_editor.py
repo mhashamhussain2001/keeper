@@ -157,8 +157,8 @@ def test_filters_and_file_to(editor: Page) -> None:
     """Return None after checking section filters and an owner's persisted take filing."""
     editor.get_by_role("button",name="Bridge",exact=True).click()
     expect(editor.locator(".take-row")).to_have_count(1)
-    editor.get_by_role("button",name="Unlabeled",exact=True).click()
-    editor.get_by_role("button",name="Actions for Unlabeled 1",exact=True).click()
+    editor.get_by_role("button",name="Takes",exact=True).click()
+    editor.get_by_role("button",name="Actions for Take 1",exact=True).click()
     editor.get_by_role("menuitem",name="Move to Verse",exact=True).click()
     editor.get_by_role("button",name="Verse",exact=True).click()
     expect(editor.get_by_role("button",name="Play Verse 2",exact=True)).to_be_visible()

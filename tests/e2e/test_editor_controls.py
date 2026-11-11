@@ -54,7 +54,7 @@ def test_ctrl_wheel_anchor_and_custom_scrollbars(editor: Page) -> None:
 
 def test_sidebar_persistence_and_all_section_groups(editor: Page) -> None:
     """Return None after checking data-driven sections, collapsible rail persistence, and mobile behavior."""
-    for name in ("Intro","Verse","Pre-chorus","Chorus","Bridge","Hook","Outro","Ideas","Unlabeled","Coda"):
+    for name in ("Intro","Verse","Pre-chorus","Chorus","Bridge","Hook","Outro","Ideas","Takes","Coda"):
         expect(editor.get_by_role("button",name=name,exact=True)).to_be_visible()
         expect(editor.locator(".group-title",has_text=name).first).to_be_attached()
     editor.locator("#sidebar-toggle").click()

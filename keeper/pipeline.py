@@ -209,7 +209,7 @@ def _run_pipeline(
     (destination / "warnings.txt").write_text("".join(f"{warning}\n" for warning in warnings), encoding="utf-8")
     for section, section_takes in songmap.sections.items():
         for index, take in enumerate(section_takes, 1):
-            name = f"{'Idea' if section == 'unsorted' else section.capitalize()} {index}"
+            name = f"{'Idea' if section == 'unsorted' else 'Take' if section == 'unlabeled' else section.capitalize()} {index}"
             reporter.emit("take_cut", take_id=take.id, name=name, section=section, start=take.start, end=take.end)
     reporter.emit("done", n_takes=sum(len(takes) for section, takes in songmap.sections.items() if section != "rejected"),
                   n_sections=sum(bool(takes) for section, takes in songmap.sections.items() if section != "rejected"),
