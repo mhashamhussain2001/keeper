@@ -21,6 +21,7 @@ from keeper.export import export_clips
 from keeper.events import EventCallback, EventReporter
 from keeper.frames import frame_labels_from_scores, frame_scores_from_windows
 from keeper.labels import LabelParser, MockLabelParser, MuseSparkLabelParser
+from keeper.grouping import group_takes
 from keeper.refine import refine_edges
 from keeper.regions import absorb_short, merge_frames, merge_adjacent
 from keeper.segment_ast import ASTScorer, Scorer
@@ -196,6 +197,7 @@ def _run_pipeline(
     takes, trim_warnings = trim_takes(takes, frame_scores, config)
     warnings.extend(trim_warnings)
     takes = refine_edges(takes, y, gate, config, [(r.start, r.end) for r in regions if r.kind == "speech"])
+    takes = group_takes(takes, y, config)
     songmap = build_songmap(takes, str(source))
     songmap.parser = "spark" if isinstance(parser, MuseSparkLabelParser) else "mock"
     destination.mkdir(parents=True, exist_ok=True)
@@ -211,7 +213,7 @@ def _run_pipeline(
     (destination / "warnings.txt").write_text("".join(f"{warning}\n" for warning in warnings), encoding="utf-8")
     for section, section_takes in songmap.sections.items():
         for index, take in enumerate(section_takes, 1):
-            name = f"{'Idea' if section == 'unsorted' else 'Take' if section == 'unlabeled' else section.capitalize()} {index}"
+            name = f"{'Idea' if section == 'unsorted' else 'Take' if section == 'unlabeled' else section[:1].upper() + section[1:]} {index}"
             reporter.emit("take_cut", take_id=take.id, name=name, section=section, start=take.start, end=take.end)
     reporter.emit("done", n_takes=sum(len(takes) for section, takes in songmap.sections.items() if section != "rejected"),
                   n_sections=sum(bool(takes) for section, takes in songmap.sections.items() if section != "rejected"),

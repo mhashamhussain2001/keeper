@@ -47,6 +47,8 @@ class KeeperConfig:
     protect_speech_run_s: float = 1.0
     edge_trim: bool = True
     refine_edges: bool = True
+    group_takes: bool = True
+    group_distance_max: float = 0.24
     refine_search_s: float = 1.0
     trim_singing_min: float = 0.0018
     max_spark_calls: int = 40

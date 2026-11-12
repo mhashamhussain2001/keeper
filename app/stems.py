@@ -30,7 +30,7 @@ def ordered_takes(songmap: dict[str, Any], names: dict[str, str], canvas: dict[s
         for index, row in enumerate(rows, 1):
             if section == "rejected" and not include_rejected:
                 continue
-            label = "Idea" if section == "unsorted" else "Take" if section == "unlabeled" else section.capitalize()
+            label = "Idea" if section == "unsorted" else "Take" if section == "unlabeled" else section[:1].upper() + section[1:]
             takes.append({**row, "section": section, "name": names.get(row["id"], row.get("custom_name") or f"{label} {index}")})
     placements: dict[str, tuple[float, int, int]] = {}
     for index, clip in sorted(enumerate(canvas.get("clips", [])), key=lambda pair: (pair[1]["start"], pair[1]["lane"], pair[0])):
