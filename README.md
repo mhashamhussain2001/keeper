@@ -3,7 +3,7 @@
 **Finds the takes in your songwriting voice memos, and files them by what you said.**
 
 Live: https://mhashamhussain2001--keeper-web.us-east.modal.run
-Demo video: https://www.youtube.com/watch?v=dG-uOieTylM
+Demo video (original hackathon version, spoken commands): https://www.youtube.com/watch?v=dG-uOieTylM
 Built solo for the Meta Global AI Developer Hackathon (Indie track, Nov 2026).
 
 ## The problem
@@ -13,9 +13,9 @@ Songwriters record long voice memos: twenty minutes of playing, talking to yours
 ## What Keeper does
 
 1. Upload a voice memo. No tagging while you record.
-2. Keeper cuts out every sung or played take.
-3. It reads what you said around each take ("file that as a verse", "scrap that", "that's the bridge") and files the take into that section.
-4. Takes you scrapped are kept in a Rejected section, not deleted.
+2. Keeper cuts out every sung or played take, splitting at pauses of 1.5 s or more and snapping edges to the real start and end of the sound.
+3. It groups repeated attempts at the same idea (Idea A, Idea B) using melody and chord similarity. No spoken commands needed, and it works in any language.
+4. In the original hackathon version, spoken commands ("file that as a verse", "scrap that") filed takes into sections. That mode is still in the code: set `KEEPER_COMMAND_FREE=0`.
 5. Drag takes onto the song canvas, play it through like a rough demo, and export the arrangement as a WAV or every take as stems at original quality.
 
 ## How it works
@@ -28,7 +28,9 @@ Songwriters record long voice memos: twenty minutes of playing, talking to yours
 
 ## Results
 
-Hand-checked on a 2:15 demo memo (piano and voice, recorded Nov 4):
+**Command-free (current):** a 2:09 memo with six takes of two ideas gave 6 takes, Idea A (takes 1-3) and Idea B (takes 4-6). A false start and throat clears were skipped. One memo, thresholds set on it, so in-sample.
+
+**Original hackathon version (spoken commands):** hand-checked on a 2:15 demo memo (piano and voice, recorded Nov 4):
 
 - 6 takes played, 5 found. Two takes merged into one because the command between them was missed.
 - 4 of 5 spoken commands handled ("file that as a verse", "that's a bridge", "dump that", "scrap that as well").
