@@ -21,6 +21,7 @@ from keeper.export import export_clips
 from keeper.events import EventCallback, EventReporter
 from keeper.frames import frame_labels_from_scores, frame_scores_from_windows
 from keeper.labels import LabelParser, MockLabelParser, MuseSparkLabelParser
+from keeper.refine import refine_edges
 from keeper.regions import absorb_short, merge_frames, merge_adjacent
 from keeper.segment_ast import ASTScorer, Scorer
 from keeper.songmap import build_songmap
@@ -194,6 +195,7 @@ def _run_pipeline(
     takes.extend(find_unlabeled(regions, [take for take, _ in takes], str(source), config))
     takes, trim_warnings = trim_takes(takes, frame_scores, config)
     warnings.extend(trim_warnings)
+    takes = refine_edges(takes, y, gate, config, [(r.start, r.end) for r in regions if r.kind == "speech"])
     songmap = build_songmap(takes, str(source))
     songmap.parser = "spark" if isinstance(parser, MuseSparkLabelParser) else "mock"
     destination.mkdir(parents=True, exist_ok=True)

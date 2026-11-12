@@ -46,6 +46,8 @@ class KeeperConfig:
     protect_speech_runs: bool = False
     protect_speech_run_s: float = 1.0
     edge_trim: bool = True
+    refine_edges: bool = True
+    refine_search_s: float = 1.0
     trim_singing_min: float = 0.0018
     max_spark_calls: int = 40
     spark_prompt_v2: bool = True
@@ -72,6 +74,8 @@ class KeeperConfig:
             raise ValueError("max_spark_calls must be a nonnegative integer")
         if any(not isfinite(value) or value <= 0 for value in (self.win_s, self.hop_s)):
             raise ValueError("win_s and hop_s must be positive and finite")
+        if not isfinite(self.refine_search_s) or self.refine_search_s <= 0:
+            raise ValueError("refine_search_s must be positive and finite")
         if not isfinite(self.attempt_gap_s) or self.attempt_gap_s <= 0:
             raise ValueError("attempt_gap_s must be positive and finite")
         if not isfinite(self.protect_speech_run_s) or self.protect_speech_run_s <= 0:
